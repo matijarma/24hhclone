@@ -1,0 +1,273 @@
+:root {
+  --yellow: #FCD42E;
+  --yellow-dim: #c7a624;
+  --bg: #0E0E10;
+  --bg-soft: #18181b;
+  --fg: #f5f5f0;
+  --fg-dim: #9a9a93;
+  --ring-radius: 320px;
+  --hour-size: 44px;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  padding: 1.25rem 1.5rem 0.5rem;
+}
+header h1 {
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+.brand {
+  color: var(--yellow);
+}
+
+main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.stage {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+/* ---- Ring (desktop) ---- */
+.ring {
+  position: relative;
+  width: calc(var(--ring-radius) * 2 + var(--hour-size) * 2);
+  height: calc(var(--ring-radius) * 2 + var(--hour-size) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring-center {
+  position: relative;
+  width: calc(var(--ring-radius) * 1.4);
+  max-width: 90%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px -30px rgba(252, 212, 46, 0.25), 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+#player, #player iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.readout {
+  position: absolute;
+  top: -3.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+.readout-hour {
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--yellow);
+}
+.readout-minute {
+  font-size: clamp(0.85rem, 1.5vw, 1rem);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hour button placement around the ring */
+.hour-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--hour-size);
+  height: var(--hour-size);
+  margin-top: calc(var(--hour-size) / -2);
+  margin-left: calc(var(--hour-size) / -2);
+  border: 1px solid rgba(255,255,255,0.18);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition:
+    transform 0.35s var(--ease),
+    background-color 0.25s var(--ease),
+    color 0.25s var(--ease),
+    border-color 0.25s var(--ease),
+    box-shadow 0.25s var(--ease);
+  will-change: transform;
+}
+.hour-btn:hover,
+.hour-btn:focus-visible {
+  background: rgba(252, 212, 46, 0.12);
+  border-color: var(--yellow);
+  color: var(--yellow);
+  outline: none;
+}
+.hour-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(252, 212, 46, 0.35);
+}
+.hour-btn[aria-pressed="true"] {
+  background: var(--yellow);
+  color: var(--bg);
+  border-color: var(--yellow);
+  transform-origin: center;
+}
+
+/* ---- Controls ---- */
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.ctrl {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.ctrl:hover,
+.ctrl:focus-visible {
+  background: rgba(252, 212, 46, 0.12);
+  border-color: var(--yellow);
+  outline: none;
+}
+.ctrl:focus-visible {
+  box-shadow: 0 0 0 3px rgba(252, 212, 46, 0.35);
+}
+.ctrl-now {
+  background: var(--yellow);
+  color: var(--bg);
+  border-color: var(--yellow);
+}
+.ctrl-now:hover,
+.ctrl-now:focus-visible {
+  background: var(--yellow);
+  color: var(--bg);
+  filter: brightness(1.08);
+}
+.ctrl-unmute {
+  background: rgba(252, 212, 46, 0.2);
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+}
+
+/* ---- Mobile: collapse ring to horizontal strip ---- */
+@media (max-width: 800px) {
+  :root {
+    --ring-radius: 0px;
+    --hour-size: 48px;
+  }
+  .ring {
+    width: 100%;
+    height: auto;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .ring-center {
+    width: 100%;
+    max-width: 700px;
+  }
+  .readout {
+    position: static;
+    transform: none;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Override the absolute-positioned rotational placement: lay out hours in a row */
+  .ring::after {
+    content: "";
+    display: block;
+  }
+  .hour-btn {
+    position: relative;
+    top: auto;
+    left: auto;
+    margin: 0;
+    transform: none !important;
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+  }
+  .hour-strip {
+    width: 100%;
+    max-width: 700px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; }
+}
