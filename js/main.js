@@ -1,4 +1,4 @@
-// 24 Hours of Happy — bootstrap (rev 2)
+// 24 Hours of Happy - bootstrap (rev 2)
 //
 // Dev tip: some browsers block fetch() on file:// URLs. Serve over HTTP:
 //   python -m http.server 8765
@@ -12,7 +12,6 @@ import {
   writeDeepLink,
   clearDeepLink,
   formatTime,
-  splitHM,
 } from "./time.js";
 import {
   initPlayer,
@@ -22,7 +21,6 @@ import {
   unmute,
   isMuted,
   getCurrentMinuteOfDay,
-  getCurrentTimeSeconds,
   getCurrentHourLoaded,
   onHourEnded,
 } from "./player.js";
@@ -35,7 +33,7 @@ async function boot() {
   try {
     HOURS = await loadHours();
   } catch (err) {
-    showError(err.message + " — try serving the folder over HTTP (see comment in js/main.js).");
+    showError(`${err.message} - try serving the folder over HTTP (see comment in js/main.js).`);
     return;
   }
 
@@ -58,9 +56,10 @@ async function boot() {
   });
 
   onHourEnded(() => {
-    const expected = manualOverride
-      ? (getCurrentHourLoaded() + 1) % 24
-      : currentMinuteOfDay() / 60 | 0;
+    const loadedHour = getCurrentHourLoaded();
+    const expected = manualOverride && loadedHour !== null
+      ? (loadedHour + 1) % 24
+      : Math.floor(currentMinuteOfDay() / 60);
     const nextMin = expected * 60;
     playerSetMinuteOfDay(nextMin, { force: true });
     sliderSetMinuteOfDay(nextMin);
@@ -96,30 +95,43 @@ function resyncNow() {
 }
 
 function wireControls() {
-  document.getElementById("now").addEventListener("click", resyncNow);
-  document.getElementById("playpause").addEventListener("click", () => playPauseToggle());
-  document.getElementById("unmute").addEventListener("click", async () => {
+  const nowBtn = document.getElementById("now");
+  const playPauseBtn = document.getElementById("playpause");
+  const unmuteBtn = document.getElementById("unmute");
+  const toggleBtn = document.getElementById("toggle-overlay");
+
+  nowBtn?.addEventListener("click", resyncNow);
+  playPauseBtn?.addEventListener("click", () => playPauseToggle());
+  unmuteBtn?.addEventListener("click", async () => {
     await unmute();
-    document.getElementById("unmute").hidden = true;
+    unmuteBtn.hidden = true;
+  });
+  toggleBtn?.addEventListener("click", () => {
+    setOverlayHidden(!isOverlayHidden());
   });
 
-  const toggleBtn = document.getElementById("toggle-overlay");
-  const showBtn = document.getElementById("show-overlay");
-  toggleBtn.addEventListener("click", () => setOverlayHidden(true));
-  showBtn.addEventListener("click", () => setOverlayHidden(false));
+  // Keep the button label and ARIA state in sync with the current class.
+  updateOverlayToggleButton(isOverlayHidden());
 }
 
 function setOverlayHidden(hidden) {
-  document.body.classList.toggle("overlay-hidden", hidden);
+  const nextHidden = Boolean(hidden);
+  document.body.classList.toggle("overlay-hidden", nextHidden);
+  updateOverlayToggleButton(nextHidden);
+  announce(nextHidden ? "Overlay hidden." : "Overlay shown.");
+}
+
+function isOverlayHidden() {
+  return document.body.classList.contains("overlay-hidden");
+}
+
+function updateOverlayToggleButton(hidden) {
   const toggleBtn = document.getElementById("toggle-overlay");
-  const showBtn = document.getElementById("show-overlay");
-  if (toggleBtn) {
-    toggleBtn.textContent = hidden ? "Show" : "Hide";
-    toggleBtn.setAttribute("aria-pressed", hidden ? "true" : "false");
-    toggleBtn.setAttribute("aria-label", hidden ? "Show overlay" : "Hide overlay");
-  }
-  if (showBtn && hidden) showBtn.focus();
-  announce(hidden ? "Overlay hidden." : "Overlay shown.");
+  if (!toggleBtn) return;
+
+  toggleBtn.textContent = hidden ? "Show" : "Hide";
+  toggleBtn.setAttribute("aria-pressed", hidden ? "true" : "false");
+  toggleBtn.setAttribute("aria-label", hidden ? "Show overlay" : "Hide overlay");
 }
 
 function wireGlobalKeys() {
@@ -137,15 +149,14 @@ function wireGlobalKeys() {
       resyncNow();
     } else if (e.key.toLowerCase() === "h") {
       e.preventDefault();
-      setOverlayHidden(!document.body.classList.contains("overlay-hidden"));
+      setOverlayHidden(!isOverlayHidden());
     }
   });
 }
 
 function startTickers(svg) {
-  // RAF loop: drive thumb + readout from the player while it's playing and the
-  // user isn't dragging. Wall-clock fallback used when we don't yet have a
-  // player time.
+  // RAF loop: drive thumb + readout from the player while it is playing and the
+  // user is not dragging. Wall-clock fallback is used when player time is absent.
   function tick() {
     const isDragging = svg.classList.contains("dragging");
     if (!isDragging) {
@@ -164,7 +175,7 @@ function startTickers(svg) {
   requestAnimationFrame(tick);
 
   // 1s ticker: in live mode, detect wall-clock hour rollover so we can swap
-  // videos slightly ahead of (or in case we lose) the ENDED event.
+  // videos slightly ahead of (or if we miss) the ENDED event.
   setInterval(() => {
     if (manualOverride) return;
     const expectedHour = Math.floor(currentMinuteOfDay() / 60);
@@ -187,7 +198,9 @@ function watchPlayState() {
   setInterval(async () => {
     try {
       btn.classList.toggle("is-playing", await isPlaying());
-    } catch (_) { /* not ready */ }
+    } catch (_) {
+      // Player may not be ready yet.
+    }
   }, 500);
 }
 

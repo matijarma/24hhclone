@@ -107,52 +107,30 @@ main {
   background: transparent;
 }
 
-/* ---- Hide/show overlay toggle ----
-   Hidden by default; revealed only when body.overlay-hidden is set. */
-.show-overlay-btn {
-  display: none;
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 100;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  border: 1px solid rgba(252, 212, 46, 0.6);
-  background: rgba(20, 20, 24, 0.7);
-  color: var(--yellow);
-  font-size: 1.25rem;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  place-items: center;
-  pointer-events: auto;
-  transition: background-color 0.2s var(--ease), transform 0.2s var(--ease);
-}
-body.overlay-hidden .show-overlay-btn {
-  display: grid;
-}
-.show-overlay-btn:hover,
-.show-overlay-btn:focus-visible {
-  background: rgba(252, 212, 46, 0.2);
-  transform: scale(1.06);
-  outline: none;
-}
-.show-overlay-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(252, 212, 46, 0.35);
-}
-
-/* When overlay is hidden, fade everything that overlays the video and disable
-   pointer events on it. The .show-overlay-btn above is the way back in. */
+/* When overlay is hidden, fade visual layers while keeping one control button
+   active so the same button can bring the overlay back. */
 body.overlay-hidden .slider,
 body.overlay-hidden .readout,
-body.overlay-hidden .controls,
 body.overlay-hidden .vignette,
 body.overlay-hidden header,
 body.overlay-hidden footer {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s var(--ease);
+}
+body.overlay-hidden .controls {
+  opacity: 1;
+  pointer-events: auto;
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.overlay-hidden .controls .ctrl:not(#toggle-overlay) {
+  display: none;
+}
+body.overlay-hidden #toggle-overlay {
+  pointer-events: auto;
 }
 
 /* ---- Slider (SVG) ---- */

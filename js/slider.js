@@ -39,7 +39,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
   // Visible track.
   trackEl = appendChild(svg, circle({ cx: 0, cy: 0, r: R_TRACK, class: "track" }));
 
-  // Progress arc — same circle, rotated -90deg so dasharray starts at top.
+  // Progress arc - same circle, rotated -90deg so dasharray starts at top.
   progressEl = appendChild(svg, circle({
     cx: 0, cy: 0, r: R_TRACK, class: "progress",
     transform: "rotate(-90)",
@@ -205,7 +205,7 @@ function pointerToMinute(e) {
   const cy = rect.top + rect.height / 2;
   const dx = e.clientX - cx;
   const dy = e.clientY - cy;
-  // theta: 0 = +x axis (3 o'clock), grows CCW in standard math. SVG y is flipped, so atan2(dy,dx) gives CW angle when y points down — which matches us.
+  // theta: 0 = +x axis (3 o'clock), grows CCW in standard math. SVG y is flipped, so atan2(dy,dx) gives CW angle when y points down - which matches us.
   let theta = Math.atan2(dy, dx);
   // Shift origin so 0 = top (12 o'clock).
   let a = theta + Math.PI / 2;
