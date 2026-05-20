@@ -1,6 +1,6 @@
 # 24 Hours of Happy 🎵🕒
 
-A fan-made web app that syncs **Pharrell Williams - Happy (24 Hours of Happy)** to your local clock.
+An unofficial recreation of the original **24hoursofhappy.com** experience that syncs **Pharrell Williams - Happy (24 Hours of Happy)** to your local clock.
 Spin the circular timeline, jump to any minute of the day, or lock back to "now" in one click.
 
 ## Highlights ✨
@@ -62,4 +62,4 @@ per-hour-yt-urls.json
 
 - Music/video property belongs to Pharrell Williams, Back Lot Music, and rights holders.
 - Videos are embedded via YouTube.
-- This project is a fan tribute and not an official release.
+- This project is an unofficial recreation of the original 24hoursofhappy.com experience and is not affiliated with the rights holders.
