@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>24 Hours of Happy</title>
   <meta name="description" content="Pharrell Williams' Happy, one hour at a time, synced to your local clock.">
   <link rel="stylesheet" href="css/style.css">
@@ -13,26 +13,40 @@
   </header>
 
   <main>
-    <div class="stage">
-      <div class="ring" id="ring" role="group" aria-label="Hour selector">
-        <div class="ring-center">
-          <div class="player-frame">
-            <div id="player"></div>
-          </div>
-          <div class="readout" aria-hidden="true">
-            <div class="readout-hour" id="readout-hour">--</div>
-            <div class="readout-minute" id="readout-minute">--</div>
-          </div>
-        </div>
-        <!-- 24 hour buttons injected by clock.js -->
+    <div class="stage" id="stage">
+
+      <div class="video-wrap" aria-hidden="true">
+        <div id="player"></div>
+      </div>
+
+      <div class="vignette" aria-hidden="true"></div>
+
+      <svg class="slider"
+           id="slider"
+           viewBox="-500 -500 1000 1000"
+           preserveAspectRatio="xMidYMid meet"
+           role="slider"
+           tabindex="0"
+           aria-label="Time of day"
+           aria-valuemin="0"
+           aria-valuemax="1439"
+           aria-valuenow="0"
+           aria-valuetext="12:00 AM">
+        <!-- Track, ticks, hour labels, progress arc, thumb, and pointer hit-ring are injected by slider.js -->
+      </svg>
+
+      <div class="readout" aria-hidden="true">
+        <div class="readout-time" id="readout-time">--:--</div>
+        <div class="readout-sub" id="readout-sub">now playing</div>
       </div>
 
       <div class="controls">
-        <button id="prev" class="ctrl" aria-label="Previous hour">&larr;</button>
-        <button id="now" class="ctrl ctrl-now" aria-label="Resync to current time">Now</button>
-        <button id="playpause" class="ctrl" aria-label="Play or pause">&#9654;&#10074;&#10074;</button>
+        <button id="playpause" class="ctrl" aria-label="Play or pause">
+          <span class="ico-play" aria-hidden="true">&#9654;</span>
+          <span class="ico-pause" aria-hidden="true">&#10074;&#10074;</span>
+        </button>
+        <button id="now" class="ctrl" aria-label="Resync to current time">Now</button>
         <button id="unmute" class="ctrl ctrl-unmute" aria-label="Unmute" hidden>Unmute</button>
-        <button id="next" class="ctrl" aria-label="Next hour">&rarr;</button>
       </div>
 
       <p id="announcer" class="sr-only" aria-live="polite"></p>

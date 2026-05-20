@@ -1,32 +1,35 @@
-// 24 Hours of Happy — bootstrap
+// 24 Hours of Happy — bootstrap (rev 2)
 //
-// Dev tip: some browsers block fetch() on file:// URLs. If the page is blank,
-// serve the folder over HTTP, e.g.:
-//   python -m http.server 8000
-// then open http://localhost:8000/
+// Dev tip: some browsers block fetch() on file:// URLs. Serve over HTTP:
+//   python -m http.server 8765
+// then open http://localhost:8765/
 
 import { loadHours } from "./hours.js";
 import {
-  currentHour,
-  currentMinuteSeconds,
+  currentMinuteOfDay,
+  currentSecondsInMinute,
   parseDeepLink,
   writeDeepLink,
   clearDeepLink,
-  hourLabel,
+  formatTime,
+  splitHM,
 } from "./time.js";
 import {
   initPlayer,
-  loadHour,
+  setMinuteOfDay as playerSetMinuteOfDay,
   playPauseToggle,
+  isPlaying,
   unmute,
   isMuted,
+  getCurrentMinuteOfDay,
+  getCurrentTimeSeconds,
+  getCurrentHourLoaded,
   onHourEnded,
 } from "./player.js";
-import { renderRing, setActiveHour, updateReadout } from "./clock.js";
+import { initSlider, setMinuteOfDay as sliderSetMinuteOfDay } from "./slider.js";
 
 let HOURS = [];
 let manualOverride = false;
-let lastTickHour = -1;
 
 async function boot() {
   try {
@@ -37,89 +40,62 @@ async function boot() {
   }
 
   const deep = parseDeepLink();
-  const startHour = deep ? deep.hour : currentHour();
-  const startSeek = deep ? deep.seekSeconds : currentMinuteSeconds();
+  const startMin = deep ? deep.minuteOfDay : currentMinuteOfDay();
+  const startSec = deep ? deep.secondsInMinute : currentSecondsInMinute();
   manualOverride = !!deep;
 
-  const ring = document.getElementById("ring");
-  renderRing(ring, HOURS, onHourClick);
-  setActiveHour(startHour);
-  updateReadout(startHour, deep ? Math.floor(deep.seekSeconds / 60) : new Date().getMinutes());
+  const svg = document.getElementById("slider");
+  initSlider(svg, {
+    initialMinute: startMin,
+    onChange: onSliderChange,
+  });
+  updateReadout(startMin);
 
-  await initPlayer({ hours: HOURS, initialHour: startHour, initialSeek: startSeek });
+  await initPlayer({
+    hours: HOURS,
+    initialMinuteOfDay: startMin,
+    initialSecondsInMinute: startSec,
+  });
 
   onHourEnded(() => {
-    // 60-min video ended. If we're tracking wall-clock, snap to it; otherwise advance.
-    if (manualOverride) {
-      const next = (currentLoadedHourFromActive() + 1) % 24;
-      onHourClick(next);
-    } else {
-      const h = currentHour();
-      loadHour(HOURS, h, currentMinuteSeconds());
-      setActiveHour(h);
-    }
+    const expected = manualOverride
+      ? (getCurrentHourLoaded() + 1) % 24
+      : currentMinuteOfDay() / 60 | 0;
+    const nextMin = expected * 60;
+    playerSetMinuteOfDay(nextMin, { force: true });
+    sliderSetMinuteOfDay(nextMin);
+    updateReadout(nextMin);
   });
 
   wireControls();
-  wireKeyboard();
-  startTicker();
-
-  // Reveal unmute affordance until the user un-mutes.
+  wireGlobalKeys();
+  startTickers(svg);
   pollUnmuteVisibility();
-
-  // Re-render ring on breakpoint flip (orientation/resize across the mobile boundary).
-  let lastIsMobile = window.matchMedia("(max-width: 800px)").matches;
-  window.addEventListener("resize", () => {
-    const nowMobile = window.matchMedia("(max-width: 800px)").matches;
-    if (nowMobile !== lastIsMobile) {
-      lastIsMobile = nowMobile;
-      renderRing(ring, HOURS, onHourClick);
-      setActiveHour(activeHourGuess());
-    }
-  });
+  watchPlayState();
 }
 
-function activeHourGuess() {
-  // After re-render we re-mark whichever hour we last announced.
-  return lastTickHour >= 0 ? lastTickHour : currentHour();
-}
-
-function onHourClick(hour) {
+function onSliderChange(min, { committed }) {
   manualOverride = true;
-  loadHour(HOURS, hour, 0);
-  setActiveHour(hour);
-  updateReadout(hour, 0);
-  writeDeepLink({ hour });
-  announce(`Now playing ${hourLabel(hour)}.`);
-}
-
-function step(delta) {
-  const base = manualOverride ? currentLoadedHourFromActive() : currentHour();
-  const next = ((base + delta) % 24 + 24) % 24;
-  onHourClick(next);
-}
-
-function currentLoadedHourFromActive() {
-  // Read aria-pressed off the buttons to find the active hour.
-  const pressed = document.querySelector('.hour-btn[aria-pressed="true"]');
-  if (!pressed) return currentHour();
-  return parseInt(pressed.dataset.hour, 10);
+  playerSetMinuteOfDay(min);
+  updateReadout(min);
+  if (committed) {
+    writeDeepLink(min);
+    announce(`Now playing ${formatTime(min)}.`);
+  }
 }
 
 function resyncNow() {
   manualOverride = false;
-  const h = currentHour();
-  const s = currentMinuteSeconds();
-  loadHour(HOURS, h, s);
-  setActiveHour(h);
-  updateReadout(h, new Date().getMinutes());
+  const min = currentMinuteOfDay();
+  const sec = currentSecondsInMinute();
+  playerSetMinuteOfDay(min, { secondsInMinute: sec, force: true });
+  sliderSetMinuteOfDay(min);
+  updateReadout(min);
   clearDeepLink();
-  announce(`Resynced to ${hourLabel(h)}.`);
+  announce(`Resynced to ${formatTime(min)}.`);
 }
 
 function wireControls() {
-  document.getElementById("prev").addEventListener("click", () => step(-1));
-  document.getElementById("next").addEventListener("click", () => step(+1));
   document.getElementById("now").addEventListener("click", resyncNow);
   document.getElementById("playpause").addEventListener("click", () => playPauseToggle());
   document.getElementById("unmute").addEventListener("click", async () => {
@@ -128,46 +104,83 @@ function wireControls() {
   });
 }
 
-function wireKeyboard() {
+function wireGlobalKeys() {
   document.addEventListener("keydown", (e) => {
-    // Ignore when typing in an input field
-    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+    const tag = e.target && e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    // Let the slider handle arrow keys etc. when focused.
+    if (document.activeElement && document.activeElement.id === "slider") return;
 
-    if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); step(+1); }
-    else if (e.key === " " || e.code === "Space") { e.preventDefault(); playPauseToggle(); }
-    else if (e.key.toLowerCase() === "n") { e.preventDefault(); resyncNow(); }
+    if (e.key === " " || e.code === "Space") {
+      e.preventDefault();
+      playPauseToggle();
+    } else if (e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      resyncNow();
+    }
   });
 }
 
-function startTicker() {
-  setInterval(() => {
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-
-    if (!manualOverride) {
-      updateReadout(h, m);
-      if (h !== lastTickHour) {
-        if (lastTickHour !== -1) {
-          // Hour rolled over: swap video.
-          loadHour(HOURS, h, 0);
-          setActiveHour(h);
-        }
-        lastTickHour = h;
+function startTickers(svg) {
+  // RAF loop: drive thumb + readout from the player while it's playing and the
+  // user isn't dragging. Wall-clock fallback used when we don't yet have a
+  // player time.
+  function tick() {
+    const isDragging = svg.classList.contains("dragging");
+    if (!isDragging) {
+      const playerMin = getCurrentMinuteOfDay();
+      if (playerMin !== null) {
+        sliderSetMinuteOfDay(playerMin);
+        updateReadout(playerMin);
+      } else if (!manualOverride) {
+        const m = currentMinuteOfDay();
+        sliderSetMinuteOfDay(m);
+        updateReadout(m);
       }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // 1s ticker: in live mode, detect wall-clock hour rollover so we can swap
+  // videos slightly ahead of (or in case we lose) the ENDED event.
+  setInterval(() => {
+    if (manualOverride) return;
+    const expectedHour = Math.floor(currentMinuteOfDay() / 60);
+    const loaded = getCurrentHourLoaded();
+    if (loaded !== null && expectedHour !== loaded) {
+      const nextMin = expectedHour * 60 + (new Date().getMinutes());
+      playerSetMinuteOfDay(nextMin, {
+        secondsInMinute: currentSecondsInMinute(),
+        force: true,
+      });
+      sliderSetMinuteOfDay(nextMin);
+      updateReadout(nextMin);
     }
   }, 1000);
 }
 
+function watchPlayState() {
+  const btn = document.getElementById("playpause");
+  if (!btn) return;
+  setInterval(async () => {
+    try {
+      btn.classList.toggle("is-playing", await isPlaying());
+    } catch (_) { /* not ready */ }
+  }, 500);
+}
+
+function updateReadout(min) {
+  const el = document.getElementById("readout-time");
+  if (el) el.textContent = formatTime(min);
+}
+
 async function pollUnmuteVisibility() {
-  // Wait a beat for the player to be ready, then check muted state.
   const btn = document.getElementById("unmute");
   if (!btn) return;
   try {
     if (await isMuted()) btn.hidden = false;
   } catch (_) {
-    // Player not ready yet; try again shortly.
     setTimeout(pollUnmuteVisibility, 1000);
   }
 }
