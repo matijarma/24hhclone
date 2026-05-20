@@ -12,14 +12,13 @@
     <h1><span class="brand">24</span> Hours of <span class="brand">Happy</span></h1>
   </header>
 
+  <div class="video-wrap" aria-hidden="true">
+    <div id="player"></div>
+  </div>
+  <div class="vignette" aria-hidden="true"></div>
+
   <main>
     <div class="stage" id="stage">
-
-      <div class="video-wrap" aria-hidden="true">
-        <div id="player"></div>
-      </div>
-
-      <div class="vignette" aria-hidden="true"></div>
 
       <svg class="slider"
            id="slider"
@@ -46,12 +45,17 @@
           <span class="ico-pause" aria-hidden="true">&#10074;&#10074;</span>
         </button>
         <button id="now" class="ctrl" aria-label="Resync to current time">Now</button>
+        <button id="toggle-overlay" class="ctrl" aria-label="Hide overlay" aria-pressed="false">Hide</button>
         <button id="unmute" class="ctrl ctrl-unmute" aria-label="Unmute" hidden>Unmute</button>
       </div>
 
       <p id="announcer" class="sr-only" aria-live="polite"></p>
     </div>
   </main>
+
+  <button id="show-overlay" class="show-overlay-btn" aria-label="Show overlay" hidden>
+    <span aria-hidden="true">&#9737;</span>
+  </button>
 
   <footer>
     <p>"Happy" &copy; Pharrell Williams &amp; Back Lot Music. Videos embedded via YouTube. Fan-made tribute.</p>

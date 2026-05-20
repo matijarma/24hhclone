@@ -102,6 +102,27 @@ function wireControls() {
     await unmute();
     document.getElementById("unmute").hidden = true;
   });
+
+  const toggleBtn = document.getElementById("toggle-overlay");
+  const showBtn = document.getElementById("show-overlay");
+  toggleBtn.addEventListener("click", () => setOverlayHidden(true));
+  showBtn.addEventListener("click", () => setOverlayHidden(false));
+}
+
+function setOverlayHidden(hidden) {
+  document.body.classList.toggle("overlay-hidden", hidden);
+  const toggleBtn = document.getElementById("toggle-overlay");
+  const showBtn = document.getElementById("show-overlay");
+  if (toggleBtn) {
+    toggleBtn.textContent = hidden ? "Show" : "Hide";
+    toggleBtn.setAttribute("aria-pressed", hidden ? "true" : "false");
+    toggleBtn.setAttribute("aria-label", hidden ? "Show overlay" : "Hide overlay");
+  }
+  if (showBtn) {
+    showBtn.hidden = !hidden;
+    if (hidden) showBtn.focus();
+  }
+  announce(hidden ? "Overlay hidden." : "Overlay shown.");
 }
 
 function wireGlobalKeys() {
@@ -117,6 +138,9 @@ function wireGlobalKeys() {
     } else if (e.key.toLowerCase() === "n") {
       e.preventDefault();
       resyncNow();
+    } else if (e.key.toLowerCase() === "h") {
+      e.preventDefault();
+      setOverlayHidden(!document.body.classList.contains("overlay-hidden"));
     }
   });
 }

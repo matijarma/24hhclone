@@ -57,52 +57,99 @@ main {
   width: 100%;
   height: 100vh;
   height: 100dvh;
-}
-
-/* ---- Stage: square, fills viewport ---- */
-.stage {
   position: relative;
-  width: min(100vw, 100vh);
-  height: min(100vw, 100vh);
-  max-width: 1400px;
-  max-height: 1400px;
-  overflow: hidden;
-  isolation: isolate;
-  background: #000;
+  z-index: 2;
 }
 
-/* ---- Video backdrop: 'cover' a square stage with a 16:9 iframe ---- */
+/* ---- Video backdrop: fills the entire viewport, 'cover' style ---- */
 .video-wrap {
-  position: absolute;
+  position: fixed;
   inset: 0;
   overflow: hidden;
   z-index: 0;
+  background: #000;
 }
 .video-wrap #player,
 .video-wrap iframe {
   position: absolute;
   top: 50%;
   left: 50%;
-  /* Make the iframe span the larger of (16:9 width covering height) and (height covering width) */
-  width: max(100%, calc(100% * 16 / 9));
-  height: max(100%, calc(100% * 9 / 16));
+  /* Cover-fill the viewport with a 16:9 iframe by oversizing on the short axis. */
+  width: max(100vw, calc(100vh * 16 / 9));
+  height: max(100vh, calc(100vw * 9 / 16));
   transform: translate(-50%, -50%);
   border: 0;
   pointer-events: none; /* slider/controls receive interaction; video itself is decorative */
 }
 
-/* ---- Vignette to keep ring legible ---- */
+/* ---- Vignette to keep ring legible against bright frames ---- */
 .vignette {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(closest-side at 50% 50%,
-      rgba(0,0,0,0) 55%,
-      rgba(0,0,0,0.35) 85%,
-      rgba(0,0,0,0.65) 100%);
+    radial-gradient(ellipse at 50% 50%,
+      rgba(0,0,0,0) 40%,
+      rgba(0,0,0,0.45) 90%,
+      rgba(0,0,0,0.7) 100%);
+  transition: opacity 0.25s var(--ease);
 }
+
+/* ---- Stage: square overlay container, transparent ---- */
+.stage {
+  position: relative;
+  width: min(100vw, 100vh);
+  height: min(100vw, 100vh);
+  max-width: 1400px;
+  max-height: 1400px;
+  isolation: isolate;
+  background: transparent;
+}
+
+/* ---- Hide/show overlay toggle ---- */
+.show-overlay-btn {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(252, 212, 46, 0.55);
+  background: rgba(20, 20, 24, 0.55);
+  color: var(--yellow);
+  font-size: 1.1rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  transition: background-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.show-overlay-btn:hover,
+.show-overlay-btn:focus-visible {
+  background: rgba(252, 212, 46, 0.2);
+  transform: scale(1.06);
+  outline: none;
+}
+.show-overlay-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(252, 212, 46, 0.35);
+}
+
+/* When overlay is hidden, fade the slider/readout/vignette and the controls strip.
+   The persistent show-overlay-btn (in body) handles bringing it back. */
+body.overlay-hidden .slider,
+body.overlay-hidden .readout,
+body.overlay-hidden .controls,
+body.overlay-hidden .vignette,
+body.overlay-hidden header,
+body.overlay-hidden footer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease);
+}
+body.overlay-hidden .slider { pointer-events: none; }
 
 /* ---- Slider (SVG) ---- */
 .slider {
