@@ -118,10 +118,7 @@ function setOverlayHidden(hidden) {
     toggleBtn.setAttribute("aria-pressed", hidden ? "true" : "false");
     toggleBtn.setAttribute("aria-label", hidden ? "Show overlay" : "Hide overlay");
   }
-  if (showBtn) {
-    showBtn.hidden = !hidden;
-    if (hidden) showBtn.focus();
-  }
+  if (showBtn && hidden) showBtn.focus();
   announce(hidden ? "Overlay hidden." : "Overlay shown.");
 }
 
