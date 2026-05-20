@@ -19,9 +19,8 @@ export function formatTime(minuteOfDay) {
 }
 
 export function hourLabel(hour) {
-  const h12 = hour % 12 === 0 ? 12 : hour % 12;
-  const suffix = hour < 12 ? "AM" : "PM";
-  return `${h12} ${suffix}`;
+  const h = ((hour % 24) + 24) % 24;
+  return `${String(h).padStart(2, "0")}:00`;
 }
 
 export function parseDeepLink(search = window.location.search) {

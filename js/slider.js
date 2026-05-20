@@ -65,14 +65,14 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
   // Hour labels around the dial. Cardinal (0/6/12/18) are full size; the
   // off-cardinals are smaller and more subtle.
   const labelHours = [
-    { h: 0,  text: "12 AM", cardinal: true  },
-    { h: 3,  text: "3 AM",  cardinal: false },
-    { h: 6,  text: "6 AM",  cardinal: true  },
-    { h: 9,  text: "9 AM",  cardinal: false },
-    { h: 12, text: "12 PM", cardinal: true  },
-    { h: 15, text: "3 PM",  cardinal: false },
-    { h: 18, text: "6 PM",  cardinal: true  },
-    { h: 21, text: "9 PM",  cardinal: false },
+    { h: 0,  text: "00", cardinal: true  },
+    { h: 3,  text: "03", cardinal: false },
+    { h: 6,  text: "06", cardinal: true  },
+    { h: 9,  text: "09", cardinal: false },
+    { h: 12, text: "12", cardinal: true  },
+    { h: 15, text: "15", cardinal: false },
+    { h: 18, text: "18", cardinal: true  },
+    { h: 21, text: "21", cardinal: false },
   ];
   for (const { h, text, cardinal } of labelHours) {
     const theta = hourToAngle(h);
