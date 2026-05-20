@@ -1,16 +1,20 @@
-# 24 Hours of Happy 🎵🕒
+# 24 Hours of Happy
 
 An unofficial recreation of the original **24hoursofhappy.com** experience that syncs **Pharrell Williams - Happy (24 Hours of Happy)** to your local clock.
 Spin the circular timeline, jump to any minute of the day, or lock back to "now" in one click.
 
-## Highlights ✨
+## Live URL
+
+https://24hh.matijar.info
+
+## Highlights
 
 - Local-time synced playback (24 hourly videos)
 - Circular 24-hour scrubber with keyboard support
 - Quick deep-linking via URL query params
 - Clean overlay toggle (`Hide` / `Show`) on the same button
 
-## Run Locally 🚀
+## Run Locally
 
 Use a local HTTP server (opening `index.html` directly from `file://` can block JSON fetches in some browsers):
 
@@ -24,7 +28,7 @@ Then open:
 http://localhost:8765/
 ```
 
-## Controls 🎛️
+## Controls
 
 - `Drag` the ring thumb: scrub time
 - `Arrow keys`: minute steps (`Shift` + arrows = 15-minute steps)
@@ -36,16 +40,16 @@ http://localhost:8765/
 - `Now` button: resync to current local time
 - `Hide/Show` button: toggle UI overlay visibility
 
-## Deep Links 🔗
+## Deep Links
 
-- `?t=HH:MM` (optional seconds: `?t=HH:MM:SS`)  
+- `?t=HH:MM` (optional seconds: `?t=HH:MM:SS`)
   Example: `?t=13:45`
-- `?hour=H` (legacy/fallback)  
+- `?hour=H` (legacy/fallback)
   Example: `?hour=9`
 
 When you scrub and release, the URL is updated with `?t=...` for easy sharing.
 
-## Project Structure 📁
+## Project Structure
 
 ```text
 index.html
@@ -58,7 +62,7 @@ js/hours.js
 per-hour-yt-urls.json
 ```
 
-## Credits 🙌
+## Credits
 
 - Music/video property belongs to Pharrell Williams, Back Lot Music, and rights holders.
 - Videos are embedded via YouTube.
