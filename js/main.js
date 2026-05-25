@@ -40,6 +40,7 @@ const STORAGE_TIME_FORMAT_KEY = "24hh.time-format";
 const CLOCK_DOUBLE_TAP_WINDOW_MS = 420;
 const CLOCK_SINGLE_TAP_DELAY_MS = 240;
 const UI_IDLE_DELAY_MS = 12000;
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 let HOURS = [];
 let manualOverride = false;
@@ -75,6 +76,7 @@ async function boot() {
     initialMinute: startMin,
     onChange: onSliderChange,
   });
+  initClockWidgetDial();
   sliderSetLabelMode(timeFormatMode);
 
   updateFormatToggleButton();
@@ -161,14 +163,13 @@ function wireControls() {
 }
 
 function wireNormalQuickActions() {
-  const stage = document.getElementById("stage");
-  if (!stage) return;
-  stage.addEventListener("click", onNormalModeClick);
-  stage.addEventListener("dblclick", onNormalModeDoubleClick);
+  document.addEventListener("click", onNormalModeClick);
+  document.addEventListener("dblclick", onNormalModeDoubleClick);
 }
 
 function onNormalModeClick(e) {
   if (clockWidgetMode) return;
+  if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeSingleTapExcluded(e.target)) return;
 
   const now = performance.now();
@@ -190,6 +191,7 @@ function onNormalModeClick(e) {
 
 function onNormalModeDoubleClick(e) {
   if (clockWidgetMode) return;
+  if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeDoubleTapExcluded(e.target)) return;
   e.preventDefault();
   normalTapLastAt = 0;
@@ -206,7 +208,7 @@ function clearNormalTapTimer() {
 
 function isNormalModeSingleTapExcluded(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(".controls, footer, header, a, button"));
+  return Boolean(target.closest(".controls, #slider, footer, header, a, button"));
 }
 
 function isNormalModeDoubleTapExcluded(target) {
@@ -500,6 +502,70 @@ function updateClockWidgetOverlay() {
 
   minuteHand.style.transform = `translateX(-50%) rotate(${minuteAngle}deg)`;
   hourHand.style.transform = `translateX(-50%) rotate(${hourAngle}deg)`;
+}
+
+function initClockWidgetDial() {
+  const dial = document.getElementById("clock-widget-dial");
+  if (!dial || dial.dataset.ready === "1") return;
+
+  dial.textContent = "";
+
+  appendSvg(dial, "circle", {
+    cx: 0,
+    cy: 0,
+    r: 380,
+    class: "clock-dial-track",
+  });
+
+  for (let h = 0; h < 12; h++) {
+    const theta = clockHourToAngle(h);
+    const cardinal = h === 0 || h === 3 || h === 6 || h === 9;
+    const inner = 380;
+    const outer = cardinal ? 420 : 402;
+
+    appendSvg(dial, "line", {
+      x1: Math.cos(theta) * inner,
+      y1: Math.sin(theta) * inner,
+      x2: Math.cos(theta) * outer,
+      y2: Math.sin(theta) * outer,
+      class: cardinal ? "clock-dial-tick cardinal" : "clock-dial-tick",
+    });
+  }
+
+  const labels = [
+    { h: 0, text: "12" },
+    { h: 3, text: "3" },
+    { h: 6, text: "6" },
+    { h: 9, text: "9" },
+  ];
+  for (const { h, text } of labels) {
+    const theta = clockHourToAngle(h);
+    appendSvg(dial, "text", {
+      x: Math.cos(theta) * 452,
+      y: Math.sin(theta) * 452,
+      class: "clock-dial-label",
+      textContent: text,
+    });
+  }
+
+  dial.dataset.ready = "1";
+}
+
+function clockHourToAngle(hour) {
+  return (hour / 12) * Math.PI * 2 - Math.PI / 2;
+}
+
+function appendSvg(parent, tagName, attrs) {
+  const el = document.createElementNS(SVG_NS, tagName);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "textContent") {
+      el.textContent = value;
+    } else {
+      el.setAttribute(key, String(value));
+    }
+  }
+  parent.appendChild(el);
+  return el;
 }
 
 function getClockReference() {
