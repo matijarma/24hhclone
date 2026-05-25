@@ -78,7 +78,9 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
     const theta = hourToAngle(h);
     const x = Math.cos(theta) * R_LABEL;
     const y = Math.sin(theta) * R_LABEL;
-    const attrs = { x, y, class: "label" };
+    const classes = ["label"];
+    if (h === 12) classes.push("label-bottom");
+    const attrs = { x, y, class: classes.join(" ") };
     if (!cardinal) attrs.style = "font-size: 28px; opacity: 0.55;";
     const el = appendChild(svg, textNode(attrs, formatRingLabel(h, labelMode)));
     labelEls.push({ hour: h, el });

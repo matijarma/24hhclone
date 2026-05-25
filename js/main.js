@@ -39,7 +39,7 @@ const TIME_FORMAT_AMPM = "ampm";
 const STORAGE_TIME_FORMAT_KEY = "24hh.time-format";
 const CLOCK_DOUBLE_TAP_WINDOW_MS = 420;
 const CLOCK_SINGLE_TAP_DELAY_MS = 240;
-const UI_IDLE_DELAY_MS = 12000;
+const UI_IDLE_DELAY_MS = 8000;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 let HOURS = [];

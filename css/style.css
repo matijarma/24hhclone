@@ -182,6 +182,10 @@ body.overlay-hidden #toggle-overlay {
   user-select: none;
   pointer-events: none;
 }
+.slider .label-bottom {
+  opacity: 0;
+  transition: opacity 0.28s var(--ease);
+}
 .slider .tick,
 .slider .track,
 .slider .progress {
@@ -342,7 +346,7 @@ body.overlay-hidden #toggle-overlay {
 .clock-widget-time {
   position: absolute;
   left: 50%;
-  top: 36%;
+  top: 31%;
   transform: translate(-50%, -50%);
   z-index: 2;
   color: var(--yellow);
@@ -485,6 +489,9 @@ body.ui-idle .controls {
   transform: translateX(-50%) translateY(16px);
   pointer-events: none;
 }
+body.ui-idle .slider .label-bottom {
+  opacity: 1;
+}
 body.ui-idle footer {
   opacity: 0;
   transform: translateY(16px);
@@ -498,6 +505,10 @@ body.ui-idle .stage:focus-within .controls {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
+}
+body.ui-idle .stage:hover .slider .label-bottom,
+body.ui-idle .stage:focus-within .slider .label-bottom {
+  opacity: 0;
 }
 body.ui-idle .stage:hover .clock-widget-hint {
   opacity: 1;
