@@ -491,7 +491,7 @@ function updateClockWidgetOverlay() {
   if (!timeEl || !hourHand || !minuteHand) return;
 
   const { minuteExact, minuteFloor } = getClockReference();
-  timeEl.textContent = formatTime12h(minuteFloor);
+  timeEl.textContent = formatMinute(minuteFloor);
 
   const minuteInHour = minuteExact % 60;
   const hour24 = Math.floor(minuteExact / 60) % 24;

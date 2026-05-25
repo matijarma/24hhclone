@@ -342,7 +342,7 @@ body.overlay-hidden #toggle-overlay {
 .clock-widget-time {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: 41%;
   transform: translate(-50%, -50%);
   z-index: 2;
   color: var(--yellow);
