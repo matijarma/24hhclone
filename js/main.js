@@ -93,6 +93,7 @@ async function boot() {
   wirePwaInstall();
   wireFullscreenListeners();
   registerServiceWorker();
+  void triggerYoutubeHealthCheck();
 
   try {
     HOURS = await loadHours();
@@ -148,6 +149,32 @@ async function boot() {
   watchPlayState();
   watchMuteState();
   await syncMuteButton();
+}
+
+async function triggerYoutubeHealthCheck() {
+  try {
+    const res = await fetch("/api/youtube-health", {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      keepalive: true,
+    });
+    if (!res.ok) return;
+
+    const payload = await res.json();
+    const flagged = Array.isArray(payload?.privateOrUnembeddable)
+      ? payload.privateOrUnembeddable
+      : [];
+
+    if (flagged.length > 0) {
+      console.warn(
+        `[24hh] Found ${flagged.length} private/unembeddable fan video(s).`,
+        flagged,
+      );
+    }
+  } catch (_) {
+    // Local static hosting or non-worker environments can fail this check.
+  }
 }
 
 function onSliderChange(min, { committed }) {

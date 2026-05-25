@@ -14,6 +14,7 @@ https://24hh.matijar.info
 - Fullscreen `Clock Widget` mode (analog + digital 12-hour clock)
 - PWA install support with conditional in-app `Install` button
 - Fan video customizer (`24 x 15` slot painter with local persistence + original fallback)
+- Background fan-video health checks (Cloudflare Worker + YouTube Data API v3, cached 24h)
 
 ## Run Locally
 
@@ -65,6 +66,35 @@ PWA support is enabled through:
 
 Install can be triggered from browser UI, and from the in-app `Install` button when supported.
 
+## Cloudflare Worker Health Check
+
+The app triggers a background request on page open to:
+
+```text
+/api/youtube-health
+```
+
+That Worker endpoint:
+
+- reads `wearehappyfrom.com.json`
+- checks each video via YouTube Data API v3 (`videos.list`, `part=status`)
+- flags videos where:
+  - `status.privacyStatus === "private"` or
+  - `status.embeddable === false`
+- caches the check result for `24h` in the Worker cache
+
+Set the API key as a Worker secret:
+
+```bash
+wrangler secret put YOUTUBE_API_KEY
+```
+
+Then deploy:
+
+```bash
+wrangler deploy
+```
+
 ## Deep Links
 
 - `?t=HH:MM` (optional seconds: `?t=HH:MM:SS`)
@@ -86,6 +116,7 @@ js/player.js
 js/slider.js
 js/time.js
 js/hours.js
+worker.js
 icons/icon-192.png
 icons/icon-512.png
 per-hour-yt-urls.json
