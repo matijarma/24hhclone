@@ -7,6 +7,19 @@ const readyPromise = new Promise((r) => { readyResolve = r; });
 let onEndedCb = null;
 let currentHourLoaded = null;
 let hoursRef = null;
+const MIN_QUALITY = "hd720";
+
+const QUALITY_RANK = Object.freeze({
+  highres: 0,
+  hd2160: 1,
+  hd1440: 2,
+  hd1080: 3,
+  hd720: 4,
+  large: 5,
+  medium: 6,
+  small: 7,
+  tiny: 8,
+});
 
 export function onHourEnded(cb) {
   onEndedCb = cb;
@@ -61,19 +74,31 @@ export async function initPlayer({ hours, initialMinuteOfDay, initialSecondsInMi
       mute: 1,
       cc_load_policy: 0,
       fs: 0,
+      vq: MIN_QUALITY,
       start: Math.floor(startSeconds),
     },
     events: {
       onReady: (e) => {
         try {
           if (startSeconds > 0) e.target.seekTo(startSeconds, true);
+          enforceMinimumQuality(e.target);
           e.target.playVideo();
+          scheduleQualityEnforcement(e.target);
         } catch (_) { /* ignore */ }
         readyResolve();
       },
       onStateChange: (e) => {
         if (e.data === YT.PlayerState.ENDED && onEndedCb) {
           onEndedCb(currentHourLoaded);
+          return;
+        }
+        if (
+          e.data === YT.PlayerState.PLAYING
+          || e.data === YT.PlayerState.BUFFERING
+          || e.data === YT.PlayerState.CUED
+        ) {
+          enforceMinimumQuality(e.target);
+          scheduleQualityEnforcement(e.target);
         }
       },
     },
@@ -102,8 +127,10 @@ export async function setMinuteOfDay(minuteOfDay, { secondsInMinute = 0, force =
       videoId: hoursRef[hour].videoId,
       startSeconds: Math.floor(seekSeconds),
     });
+    scheduleQualityEnforcement(ytPlayer);
   } else {
     ytPlayer.seekTo(seekSeconds, true);
+    enforceMinimumQuality(ytPlayer);
   }
 }
 
@@ -151,4 +178,60 @@ function loadIframeApi() {
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
   });
+}
+
+function scheduleQualityEnforcement(player) {
+  setTimeout(() => enforceMinimumQuality(player), 250);
+  setTimeout(() => enforceMinimumQuality(player), 1000);
+  setTimeout(() => enforceMinimumQuality(player), 2500);
+}
+
+function enforceMinimumQuality(player) {
+  if (!player) return;
+
+  const targetQuality = resolvePreferredQuality(player);
+
+  try {
+    if (typeof player.setPlaybackQualityRange === "function") {
+      player.setPlaybackQualityRange(targetQuality);
+    }
+  } catch (_) {
+    // Optional API path; ignore failures.
+  }
+
+  try {
+    if (typeof player.setPlaybackQuality === "function") {
+      player.setPlaybackQuality(targetQuality);
+    }
+  } catch (_) {
+    // Optional API path; ignore failures.
+  }
+}
+
+function resolvePreferredQuality(player) {
+  try {
+    const levels = player.getAvailableQualityLevels?.();
+    if (!Array.isArray(levels) || levels.length === 0) {
+      return MIN_QUALITY;
+    }
+
+    const minRank = QUALITY_RANK[MIN_QUALITY] ?? QUALITY_RANK.hd720;
+    const atLeastMin = levels.filter((q) => {
+      const rank = QUALITY_RANK[q];
+      return Number.isFinite(rank) && rank <= minRank;
+    });
+    if (atLeastMin.length > 0) {
+      return pickHighestQuality(atLeastMin);
+    }
+
+    return pickHighestQuality(levels);
+  } catch (_) {
+    return MIN_QUALITY;
+  }
+}
+
+function pickHighestQuality(levels) {
+  return levels
+    .slice()
+    .sort((a, b) => (QUALITY_RANK[a] ?? 999) - (QUALITY_RANK[b] ?? 999))[0] || MIN_QUALITY;
 }

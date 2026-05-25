@@ -19,6 +19,7 @@ const R_THUMB_HIT = 32;
 const R_THUMB_HALO = 26;
 const CIRC = 2 * Math.PI * R_TRACK;
 const MIN_PER_DAY = 1440;
+const LABEL_HOURS = [0, 3, 6, 9, 12, 15, 18, 21];
 
 let svgEl = null;
 let trackEl, progressEl, thumbEl, thumbHitEl, haloEl;
@@ -28,6 +29,8 @@ let dragging = false;
 let scrubThrottleAt = 0;
 let interactive = true;
 let baseTabIndex = "0";
+let labelMode = "24h";
+const labelEls = [];
 const SCRUB_HZ_MS = 160; // ~6 Hz
 
 export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {}) {
@@ -35,6 +38,8 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
   onChangeCb = onChange;
   baseTabIndex = svg.getAttribute("tabindex") || "0";
   interactive = true;
+  labelMode = "24h";
+  labelEls.length = 0;
 
   // Build SVG content.
   // Pointer hit-ring (transparent, generous grab zone along the track).
@@ -68,23 +73,15 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
 
   // Hour labels around the dial. Cardinal (0/6/12/18) are full size; the
   // off-cardinals are smaller and more subtle.
-  const labelHours = [
-    { h: 0,  text: "00", cardinal: true  },
-    { h: 3,  text: "03", cardinal: false },
-    { h: 6,  text: "06", cardinal: true  },
-    { h: 9,  text: "09", cardinal: false },
-    { h: 12, text: "12", cardinal: true  },
-    { h: 15, text: "15", cardinal: false },
-    { h: 18, text: "18", cardinal: true  },
-    { h: 21, text: "21", cardinal: false },
-  ];
-  for (const { h, text, cardinal } of labelHours) {
+  for (const h of LABEL_HOURS) {
+    const cardinal = h === 0 || h === 6 || h === 12 || h === 18;
     const theta = hourToAngle(h);
     const x = Math.cos(theta) * R_LABEL;
     const y = Math.sin(theta) * R_LABEL;
     const attrs = { x, y, class: "label" };
     if (!cardinal) attrs.style = "font-size: 28px; opacity: 0.55;";
-    appendChild(svg, textNode(attrs, text));
+    const el = appendChild(svg, textNode(attrs, formatRingLabel(h, labelMode)));
+    labelEls.push({ hour: h, el });
   }
 
   // Thumb halo (focus/drag), thumb, thumb hit-target.
@@ -170,6 +167,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
     setMinuteOfDay,
     getMinuteOfDay: () => minuteOfDay,
     setInteractive,
+    setLabelMode,
   };
 }
 
@@ -196,7 +194,7 @@ export function setMinuteOfDay(min) {
   }
   if (svgEl) {
     svgEl.setAttribute("aria-valuenow", String(minuteOfDay));
-    svgEl.setAttribute("aria-valuetext", formatTime(minuteOfDay));
+    svgEl.setAttribute("aria-valuetext", formatTime(minuteOfDay, labelMode));
   }
 }
 
@@ -212,6 +210,16 @@ export function setInteractive(enabled) {
     dragging = false;
     svgEl.setAttribute("tabindex", "-1");
     svgEl.setAttribute("aria-disabled", "true");
+  }
+}
+
+export function setLabelMode(mode = "24h") {
+  labelMode = mode === "ampm" ? "ampm" : "24h";
+  for (const { hour, el } of labelEls) {
+    el.textContent = formatRingLabel(hour, labelMode);
+  }
+  if (svgEl) {
+    svgEl.setAttribute("aria-valuetext", formatTime(minuteOfDay, labelMode));
   }
 }
 
@@ -248,6 +256,15 @@ function hourToAngle(h) {
 }
 function minuteToAngle(m) {
   return (m / MIN_PER_DAY) * Math.PI * 2 - Math.PI / 2;
+}
+
+function formatRingLabel(hour, mode) {
+  if (mode !== "ampm") {
+    return String(hour).padStart(2, "0");
+  }
+  const hour12 = hour % 12 || 12;
+  const suffix = hour >= 12 ? "P" : "A";
+  return `${hour12}${suffix}`;
 }
 
 function appendChild(parent, el) {

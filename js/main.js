@@ -31,6 +31,7 @@ import {
   initSlider,
   setMinuteOfDay as sliderSetMinuteOfDay,
   setInteractive as sliderSetInteractive,
+  setLabelMode as sliderSetLabelMode,
 } from "./slider.js";
 
 const TIME_FORMAT_24H = "24h";
@@ -70,6 +71,7 @@ async function boot() {
     initialMinute: startMin,
     onChange: onSliderChange,
   });
+  sliderSetLabelMode(timeFormatMode);
 
   updateFormatToggleButton();
   updateReadout(startMin);
@@ -218,6 +220,7 @@ function toggleTimeFormat() {
     ? TIME_FORMAT_AMPM
     : TIME_FORMAT_24H;
   persistTimeFormatMode(timeFormatMode);
+  sliderSetLabelMode(timeFormatMode);
   updateFormatToggleButton();
   updateReadout(getClockReference().minuteFloor);
   announce(`Time format set to ${timeFormatMode === TIME_FORMAT_24H ? "24-hour" : "AM/PM"}.`);
@@ -332,10 +335,10 @@ async function enterClockWidgetMode() {
   attachClockWidgetInput();
   updateClockWidgetOverlay();
 
-  const stage = document.getElementById("stage");
-  if (stage?.requestFullscreen) {
+  const fullscreenTarget = document.documentElement;
+  if (fullscreenTarget?.requestFullscreen) {
     try {
-      await stage.requestFullscreen();
+      await fullscreenTarget.requestFullscreen();
     } catch (_) {
       // Fullscreen may be blocked on some browsers/devices.
     }
