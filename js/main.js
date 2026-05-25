@@ -56,6 +56,7 @@ let HOURS = [];
 let FAN_VIDEOS = [];
 let FAN_BY_ID = new Map();
 let FAN_COUNTRIES = [];
+let flaggedFanVideoIds = new Set();
 
 let customAssignments = createEmptyAssignments();
 let desktopPickerState = {
@@ -104,12 +105,11 @@ async function boot() {
 
   try {
     FAN_VIDEOS = await loadFanVideos();
-    FAN_BY_ID = new Map(FAN_VIDEOS.map((entry) => [entry.videoId, entry]));
-    FAN_COUNTRIES = Array.from(new Set(FAN_VIDEOS.map((entry) => entry.country))).sort((a, b) => a.localeCompare(b));
+    rebuildFanCatalogIndexes();
+    applyFlaggedFanVideoFilter();
   } catch (err) {
     FAN_VIDEOS = [];
-    FAN_BY_ID = new Map();
-    FAN_COUNTRIES = [];
+    rebuildFanCatalogIndexes();
     console.warn("Failed to load fan database:", err);
   }
 
@@ -162,19 +162,94 @@ async function triggerYoutubeHealthCheck() {
     if (!res.ok) return;
 
     const payload = await res.json();
-    const flagged = Array.isArray(payload?.privateOrUnembeddable)
-      ? payload.privateOrUnembeddable
-      : [];
+    const flaggedIds = extractFlaggedVideoIdSet(payload);
+    setFlaggedFanVideoIds(flaggedIds);
 
-    if (flagged.length > 0) {
+    if (flaggedIds.size > 0) {
       console.warn(
-        `[24hh] Found ${flagged.length} private/unembeddable fan video(s).`,
-        flagged,
+        `[24hh] Excluding ${flaggedIds.size} private/unembeddable fan video(s).`,
+        payload.privateOrUnembeddable,
       );
     }
   } catch (_) {
     // Local static hosting or non-worker environments can fail this check.
   }
+}
+
+function extractFlaggedVideoIdSet(payload) {
+  const flaggedRows = Array.isArray(payload && payload.privateOrUnembeddable)
+    ? payload.privateOrUnembeddable
+    : [];
+  const ids = new Set();
+
+  for (const row of flaggedRows) {
+    const videoId = normalizeVideoId(row && row.videoId);
+    if (!videoId) continue;
+    ids.add(videoId);
+  }
+
+  return ids;
+}
+
+function setFlaggedFanVideoIds(nextIds) {
+  if (!(nextIds instanceof Set)) return;
+  if (areStringSetsEqual(flaggedFanVideoIds, nextIds)) return;
+  flaggedFanVideoIds = new Set(nextIds);
+  applyFlaggedFanVideoFilter();
+}
+
+function applyFlaggedFanVideoFilter() {
+  if (!Array.isArray(FAN_VIDEOS) || FAN_VIDEOS.length === 0) return;
+  if (!(flaggedFanVideoIds instanceof Set) || flaggedFanVideoIds.size === 0) return;
+
+  const nextVideos = FAN_VIDEOS.filter((fan) => !flaggedFanVideoIds.has(fan.videoId));
+  if (nextVideos.length === FAN_VIDEOS.length) return;
+
+  FAN_VIDEOS = nextVideos;
+  rebuildFanCatalogIndexes();
+
+  let assignmentsChanged = false;
+  for (let i = 0; i < customAssignments.length; i++) {
+    const assignedId = customAssignments[i];
+    if (!assignedId) continue;
+    if (FAN_BY_ID.has(assignedId)) continue;
+    customAssignments[i] = null;
+    assignmentsChanged = true;
+  }
+
+  if (activeBrushVideoId && !FAN_BY_ID.has(activeBrushVideoId)) {
+    activeBrushVideoId = null;
+  }
+
+  if (customizerReady) {
+    renderSelectedBrushIndicator();
+    renderDesktopPicker();
+    renderAllSlotCells();
+    renderMobilePicker();
+  }
+
+  updateCustomizeButtonState();
+
+  if (assignmentsChanged) {
+    persistCustomAssignments(customAssignments);
+  }
+
+  setCustomPlaylist({ assignmentsBySlot: customAssignments, fanVideos: FAN_VIDEOS });
+}
+
+function rebuildFanCatalogIndexes() {
+  FAN_BY_ID = new Map(FAN_VIDEOS.map((entry) => [entry.videoId, entry]));
+  FAN_COUNTRIES = Array.from(new Set(FAN_VIDEOS.map((entry) => entry.country))).sort((a, b) => a.localeCompare(b));
+}
+
+function areStringSetsEqual(a, b) {
+  if (a === b) return true;
+  if (!(a instanceof Set) || !(b instanceof Set)) return false;
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
 }
 
 function onSliderChange(min, { committed }) {

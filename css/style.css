@@ -382,26 +382,35 @@ body.overlay-hidden #toggle-overlay {
   bottom: clamp(1rem, 4vh, 3rem);
   transform: translateX(-50%);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   gap: 0.5rem;
   align-items: center;
-  row-gap: 0.45rem;
+  row-gap: 0;
   padding: 0.4rem;
-  max-width: min(96vw, 980px);
+  width: min(98vw, 1240px);
   background: var(--bg-soft);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 999px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
   opacity: 0.55;
   transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
+}
+.controls::-webkit-scrollbar {
+  display: none;
 }
 .stage:hover .controls,
 .stage:focus-within .controls {
   opacity: 1;
 }
 .ctrl {
+  flex: 0 0 auto;
   min-width: 44px;
   min-height: 44px;
   padding: 0.5rem 1rem;
@@ -411,6 +420,8 @@ body.overlay-hidden #toggle-overlay {
   border-radius: 999px;
   font-size: 0.92rem;
   font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease);
   font-family: inherit;
@@ -1010,7 +1021,7 @@ body.customize-open {
   footer { font-size: 0.65rem; padding: 0.4rem 0.6rem; }
   .controls { opacity: 1; }
   .controls {
-    max-width: calc(100vw - 0.8rem);
+    width: calc(100vw - 0.8rem);
     gap: 0.4rem;
     padding: 0.45rem;
   }
