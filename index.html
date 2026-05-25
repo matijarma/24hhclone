@@ -76,45 +76,60 @@
     </div>
   </main>
 
-  <div class="customize-modal" id="customize-modal" hidden>
+  <div class="customize-modal" id="customize-modal" hidden data-state="closed">
+    <div class="customize-backdrop" aria-hidden="true"></div>
     <div class="customize-dialog" role="dialog" aria-modal="true" aria-labelledby="customize-title">
-      <div class="customize-head">
-        <h2 id="customize-title">Customize Playlist</h2>
-        <button id="customize-close" class="ctrl ctrl-compact" aria-label="Close customizer">Close</button>
-      </div>
 
-      <div class="customize-selected">
-        <div id="custom-brush-label" class="custom-brush-label"></div>
-        <button id="custom-clear-brush" class="ctrl ctrl-compact" aria-label="Clear selected brush">Clear</button>
-      </div>
+      <header class="customize-head">
+        <div class="customize-head-titles">
+          <p class="eyebrow">Playlist</p>
+          <h2 id="customize-title">Compose your day</h2>
+        </div>
+        <p class="customize-status" id="customize-status" aria-live="polite"></p>
+        <button id="customize-close" class="ctrl ctrl-compact" aria-label="Close customizer">Close</button>
+      </header>
+
+      <section class="customize-brush" id="customize-brush" data-empty="true" aria-label="Loaded brush">
+        <div class="brush-swatch" id="brush-swatch" aria-hidden="true"></div>
+        <div class="brush-info" id="brush-info">
+          <p class="brush-hint">Pick a video below or tap an empty slot to begin.</p>
+        </div>
+        <button id="custom-clear-brush" class="ctrl ctrl-compact" aria-label="Clear brush" disabled>Clear</button>
+      </section>
 
       <div class="customize-body">
-        <div class="custom-mobile-picker" id="custom-mobile-picker" hidden></div>
-
-        <section class="customize-grid-wrap" aria-label="Slot grid">
+        <section class="customize-day" aria-label="Day timeline">
+          <p class="eyebrow">Day</p>
           <div class="customize-grid" id="customize-grid"></div>
         </section>
 
-        <aside class="customize-picker" aria-label="Fan video picker">
-          <div class="custom-picker-head">
-            <button id="custom-desktop-back" class="ctrl ctrl-compact" aria-label="Go back" hidden>Back</button>
-            <div class="custom-picker-step">
-              <p class="custom-picker-stage" id="custom-desktop-stage">Select country</p>
-              <p class="custom-picker-path" id="custom-desktop-path">Step 1 of 3</p>
-            </div>
-          </div>
+        <section class="customize-browse" aria-label="Browse fan videos">
+          <p class="eyebrow">Browse</p>
           <label class="custom-picker-search-wrap" for="custom-picker-search">
-            <span class="custom-picker-search-label">Search</span>
-            <input id="custom-picker-search" class="custom-picker-search" type="search" autocomplete="off" placeholder="Search countries">
+            <input id="custom-picker-search" class="custom-picker-search" type="search" autocomplete="off" placeholder="Search videos, cities, countries">
           </label>
-          <div class="custom-desktop-picker" id="custom-desktop-picker"></div>
-          <div class="custom-video-list" id="custom-video-list"></div>
-        </aside>
+          <div class="custom-picker-list" id="custom-desktop-picker" role="listbox" aria-label="Fan videos"></div>
+        </section>
       </div>
 
-      <div class="customize-foot">
-        <button id="custom-reset" class="ctrl" aria-label="Reset custom layout">Reset Layout</button>
-        <button id="customize-done" class="ctrl" aria-label="Close customizer">Done</button>
+      <footer class="customize-foot">
+        <button id="custom-reset" class="ctrl" aria-label="Reset custom layout">Reset</button>
+        <button id="customize-done" class="ctrl ctrl-primary" aria-label="Done customizing">Done</button>
+      </footer>
+
+      <div class="customize-sheet" id="custom-mobile-picker" hidden aria-label="Choose a fan video">
+        <div class="customize-sheet-handle" aria-hidden="true"></div>
+        <header class="customize-sheet-head">
+          <div class="customize-sheet-titles">
+            <p class="eyebrow" id="custom-sheet-eyebrow">Browse</p>
+            <h3 class="customize-sheet-title" id="custom-sheet-title">Pick a video</h3>
+          </div>
+          <button id="custom-sheet-close" class="ctrl ctrl-compact" aria-label="Close picker">Close</button>
+        </header>
+        <label class="custom-picker-search-wrap" for="custom-sheet-search">
+          <input id="custom-sheet-search" class="custom-picker-search" type="search" autocomplete="off" placeholder="Search videos, cities, countries">
+        </label>
+        <div class="custom-picker-list" id="custom-sheet-list" role="listbox" aria-label="Fan videos"></div>
       </div>
     </div>
   </div>

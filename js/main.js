@@ -59,24 +59,24 @@ let FAN_COUNTRIES = [];
 let flaggedFanVideoIds = new Set();
 
 let customAssignments = createEmptyAssignments();
-let desktopPickerState = {
-  step: "country",
-  country: "",
-  city: "",
+let pickerState = {
+  openCountry: "",
   search: "",
 };
 let activeBrushVideoId = null;
 let slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
+let slotCaptionEls = new Array(24).fill(null);
 let customizerOpen = false;
 let customizerReady = false;
 let paintDragging = false;
 let customSyncTimer = null;
-let mobilePickerState = {
+let pendingPaintSlotIndex = null;
+let closeAnimTimer = null;
+let lastNowHourRow = null;
+let lastNowSlotEl = null;
+let mobileSheetState = {
   open: false,
   slotIndex: null,
-  step: "country",
-  country: "",
-  city: "",
 };
 
 let manualOverride = false;
@@ -222,10 +222,10 @@ function applyFlaggedFanVideoFilter() {
   }
 
   if (customizerReady) {
-    renderSelectedBrushIndicator();
-    renderDesktopPicker();
+    renderBrushBar();
+    renderPickerLists();
     renderAllSlotCells();
-    renderMobilePicker();
+    renderAllRowCaptions();
   }
 
   updateCustomizeButtonState();
@@ -364,16 +364,17 @@ function isNormalModeDoubleTapExcluded(target) {
 
 function wireGlobalKeys() {
   document.addEventListener("keydown", (e) => {
+    if (customizerOpen && e.key === "Escape") {
+      e.preventDefault();
+      if (mobileSheetState.open) closeMobileSheet();
+      else closeCustomizerModal();
+      return;
+    }
+
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-    if (customizerOpen) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeCustomizerModal();
-      }
-      return;
-    }
+    if (customizerOpen) return;
 
     if (clockWidgetMode) {
       if (e.key === "Escape") {
@@ -514,6 +515,10 @@ function startTickers(svg) {
 
     if (clockWidgetMode) {
       updateClockWidgetOverlay();
+    }
+
+    if (customizerOpen) {
+      tickCustomizerNow();
     }
 
     requestAnimationFrame(tick);
@@ -790,46 +795,43 @@ function formatMinute(minuteOfDay, { force12h = false } = {}) {
 function initCustomizerUi() {
   const modal = document.getElementById("customize-modal");
   const grid = document.getElementById("customize-grid");
-  const list = document.getElementById("custom-video-list");
-  const desktopPickerRoot = document.getElementById("custom-desktop-picker");
-  const desktopBackBtn = document.getElementById("custom-desktop-back");
-  const desktopSearchInput = document.getElementById("custom-picker-search");
+  const desktopRoot = document.getElementById("custom-desktop-picker");
+  const desktopSearch = document.getElementById("custom-picker-search");
+  const sheetRoot = document.getElementById("custom-sheet-list");
+  const sheetSearch = document.getElementById("custom-sheet-search");
+  const sheetCloseBtn = document.getElementById("custom-sheet-close");
   const closeTopBtn = document.getElementById("customize-close");
   const closeBottomBtn = document.getElementById("customize-done");
   const resetBtn = document.getElementById("custom-reset");
   const clearBrushBtn = document.getElementById("custom-clear-brush");
+  const sheetEl = document.getElementById("custom-mobile-picker");
+  const backdrop = modal?.querySelector(".customize-backdrop");
 
-  if (!modal || !grid || !list || !desktopPickerRoot || !desktopBackBtn || !desktopSearchInput) {
-    return;
-  }
+  if (!modal || !grid || !desktopRoot || !desktopSearch || !sheetRoot || !sheetSearch) return;
 
   buildCustomizerGrid(grid);
-  resetDesktopPickerState({ render: false });
-  renderDesktopPicker();
-  renderSelectedBrushIndicator();
+  renderBrushBar();
+  renderPickerLists();
   renderAllSlotCells();
-  renderMobilePicker();
+  renderAllRowCaptions();
+  renderCustomizerStatus();
 
-  desktopBackBtn.addEventListener("click", onDesktopPickerBack);
-  desktopSearchInput.addEventListener("input", () => {
-    desktopPickerState.search = desktopSearchInput.value.trim();
-    renderDesktopPicker();
-  });
+  const syncSearchInputs = (value) => {
+    pickerState.search = value;
+    if (desktopSearch.value !== value) desktopSearch.value = value;
+    if (sheetSearch.value !== value) sheetSearch.value = value;
+    renderPickerLists();
+  };
+  desktopSearch.addEventListener("input", () => syncSearchInputs(desktopSearch.value));
+  sheetSearch.addEventListener("input", () => syncSearchInputs(sheetSearch.value));
 
-  list.addEventListener("click", (e) => {
-    if (!(e.target instanceof Element)) return;
-    const option = e.target.closest("button[data-video-id]");
-    if (!(option instanceof HTMLButtonElement)) return;
-
-    const videoId = option.dataset.videoId;
-    if (!videoId || !FAN_BY_ID.has(videoId)) return;
-
-    setActiveBrush(videoId);
-  });
+  desktopRoot.addEventListener("click", onPickerListClick);
+  sheetRoot.addEventListener("click", onPickerListClick);
 
   grid.addEventListener("pointerdown", onGridPointerDown);
   grid.addEventListener("pointerover", onGridPointerOver);
   grid.addEventListener("click", onGridClickFallback);
+  grid.addEventListener("dblclick", onGridDoubleClick);
   window.addEventListener("pointerup", () => {
     paintDragging = false;
   });
@@ -837,20 +839,19 @@ function initCustomizerUi() {
   closeTopBtn?.addEventListener("click", closeCustomizerModal);
   closeBottomBtn?.addEventListener("click", closeCustomizerModal);
   resetBtn?.addEventListener("click", resetCustomLayout);
-  clearBrushBtn?.addEventListener("click", () => {
-    setActiveBrush(null);
+  clearBrushBtn?.addEventListener("click", () => setActiveBrush(null));
+  sheetCloseBtn?.addEventListener("click", closeMobileSheet);
+
+  backdrop?.addEventListener("click", () => {
+    if (mobileSheetState.open) closeMobileSheet();
+    else closeCustomizerModal();
   });
 
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      closeCustomizerModal();
-    }
-  });
-
-  window.addEventListener("resize", () => {
-    renderDesktopPicker();
-    renderMobilePicker();
-  });
+  if (sheetEl) {
+    sheetEl.addEventListener("click", (e) => {
+      if (e.target === sheetEl) closeMobileSheet();
+    });
+  }
 
   customizerReady = true;
   updateCustomizeButtonState();
@@ -866,20 +867,37 @@ function openCustomizerModal() {
   const modal = document.getElementById("customize-modal");
   if (!modal) return;
 
+  if (closeAnimTimer !== null) {
+    clearTimeout(closeAnimTimer);
+    closeAnimTimer = null;
+  }
+
   customizerOpen = true;
+  pendingPaintSlotIndex = null;
   modal.hidden = false;
+  modal.dataset.state = "opening";
   document.body.classList.add("customize-open");
   syncSliderInteractivity();
 
-  resetDesktopPickerState({ render: false });
-  renderDesktopPicker();
-  renderSelectedBrushIndicator();
+  pickerState.search = "";
+  const desktopSearch = document.getElementById("custom-picker-search");
+  const sheetSearch = document.getElementById("custom-sheet-search");
+  if (desktopSearch) desktopSearch.value = "";
+  if (sheetSearch) sheetSearch.value = "";
+
+  renderBrushBar();
+  renderPickerLists();
   renderAllSlotCells();
-  renderMobilePicker();
+  renderAllRowCaptions();
+  renderCustomizerStatus();
+  tickCustomizerNow();
 
   requestAnimationFrame(() => {
-    const closeBtn = document.getElementById("customize-close");
-    closeBtn?.focus();
+    modal.dataset.state = "open";
+    requestAnimationFrame(() => {
+      const closeBtn = document.getElementById("customize-close");
+      closeBtn?.focus();
+    });
   });
 }
 
@@ -889,8 +907,19 @@ function closeCustomizerModal() {
 
   customizerOpen = false;
   paintDragging = false;
-  closeMobilePicker();
-  modal.hidden = true;
+  pendingPaintSlotIndex = null;
+  clearNowMarker();
+  closeMobileSheet({ immediate: true });
+
+  modal.dataset.state = "closing";
+
+  if (closeAnimTimer !== null) clearTimeout(closeAnimTimer);
+  closeAnimTimer = window.setTimeout(() => {
+    closeAnimTimer = null;
+    modal.hidden = true;
+    modal.dataset.state = "closed";
+  }, 240);
+
   document.body.classList.remove("customize-open");
   syncSliderInteractivity();
 }
@@ -922,15 +951,21 @@ function updateCustomizeButtonState() {
 
 function buildCustomizerGrid(gridRoot) {
   slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
+  slotCaptionEls = new Array(24).fill(null);
   gridRoot.textContent = "";
 
   for (let hour = 0; hour < 24; hour++) {
     const row = document.createElement("div");
     row.className = "custom-row";
+    row.dataset.hour = String(hour);
 
-    const hourLabel = document.createElement("div");
+    const hourLabel = document.createElement("button");
+    hourLabel.type = "button";
     hourLabel.className = "custom-row-label";
+    if (hour % 6 === 0) hourLabel.classList.add("is-cardinal");
     hourLabel.textContent = String(hour).padStart(2, "0");
+    hourLabel.setAttribute("aria-label", `Fill hour ${String(hour).padStart(2, "0")} with current brush`);
+    hourLabel.addEventListener("click", () => onHourLabelClick(hour));
 
     const slotsWrap = document.createElement("div");
     slotsWrap.className = "custom-row-slots";
@@ -941,14 +976,18 @@ function buildCustomizerGrid(gridRoot) {
       btn.type = "button";
       btn.className = "custom-slot";
       btn.dataset.slotIndex = String(slotIndex);
-      btn.textContent = String(slotInHour + 1).padStart(2, "0");
       btn.setAttribute("aria-label", `Slot ${formatSlotLabel(slotIndex)}`);
       slotsWrap.appendChild(btn);
       slotCellEls[slotIndex] = btn;
     }
 
+    const caption = document.createElement("div");
+    caption.className = "custom-row-caption";
+    slotCaptionEls[hour] = caption;
+
     row.appendChild(hourLabel);
     row.appendChild(slotsWrap);
+    row.appendChild(caption);
     gridRoot.appendChild(row);
   }
 }
@@ -962,7 +1001,11 @@ function onGridPointerDown(e) {
 
   if (isMobilePickerViewport()) {
     paintDragging = false;
-    openMobilePicker(slot);
+    if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
+      assignSlot(slot, activeBrushVideoId);
+    } else {
+      openMobileSheet(slot);
+    }
     e.preventDefault();
     return;
   }
@@ -974,7 +1017,10 @@ function onGridPointerDown(e) {
     return;
   }
 
-  announce("Choose a fan video first, then paint slots.");
+  pendingPaintSlotIndex = slot;
+  const search = document.getElementById("custom-picker-search");
+  search?.focus();
+  announce(`Pick a video to paint slot ${formatSlotLabel(slot)}.`);
 }
 
 function onGridClickFallback(e) {
@@ -982,12 +1028,18 @@ function onGridClickFallback(e) {
   if (!(e.target instanceof Element)) return;
   const slot = extractSlotIndexFromTarget(e.target);
   if (slot === null) return;
+  if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) return;
+  if (mobileSheetState.open && mobileSheetState.slotIndex === slot) return;
+  openMobileSheet(slot);
+}
 
-  if (mobilePickerState.open && mobilePickerState.slotIndex === slot) {
-    return;
-  }
-
-  openMobilePicker(slot);
+function onGridDoubleClick(e) {
+  if (!(e.target instanceof Element)) return;
+  const slot = extractSlotIndexFromTarget(e.target);
+  if (slot === null) return;
+  if (!customAssignments[slot]) return;
+  e.preventDefault();
+  clearSlotAssignment(slot);
 }
 
 function onGridPointerOver(e) {
@@ -998,7 +1050,7 @@ function onGridPointerOver(e) {
   if (slot === null) return;
   if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) return;
 
-  assignSlot(slot, activeBrushVideoId);
+  assignSlot(slot, activeBrushVideoId, { pulse: false });
 }
 
 function extractSlotIndexFromTarget(target) {
@@ -1009,7 +1061,46 @@ function extractSlotIndexFromTarget(target) {
   return slot;
 }
 
-function assignSlot(slotIndex, videoId) {
+function onHourLabelClick(hour) {
+  if (!Number.isInteger(hour) || hour < 0 || hour >= 24) return;
+
+  const allAssignedToBrush = activeBrushVideoId && hourSlotsAllMatch(hour, activeBrushVideoId);
+  if (allAssignedToBrush) {
+    clearHour(hour);
+    announce(`Cleared hour ${String(hour).padStart(2, "0")}.`);
+    return;
+  }
+
+  if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) {
+    announce("Pick a video first, then click an hour to fill it.");
+    return;
+  }
+
+  paintHour(hour, activeBrushVideoId);
+  const fan = FAN_BY_ID.get(activeBrushVideoId);
+  announce(`Filled hour ${String(hour).padStart(2, "0")} with ${fan.title}.`);
+}
+
+function hourSlotsAllMatch(hour, videoId) {
+  for (let i = 0; i < SLOTS_PER_HOUR; i++) {
+    if (customAssignments[hour * SLOTS_PER_HOUR + i] !== videoId) return false;
+  }
+  return true;
+}
+
+function paintHour(hour, videoId) {
+  for (let i = 0; i < SLOTS_PER_HOUR; i++) {
+    assignSlot(hour * SLOTS_PER_HOUR + i, videoId, { pulse: false });
+  }
+}
+
+function clearHour(hour) {
+  for (let i = 0; i < SLOTS_PER_HOUR; i++) {
+    clearSlotAssignment(hour * SLOTS_PER_HOUR + i);
+  }
+}
+
+function assignSlot(slotIndex, videoId, options = {}) {
   if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SLOTS_PER_DAY) return;
   const normalizedVideoId = FAN_BY_ID.has(videoId) ? videoId : null;
 
@@ -1017,13 +1108,42 @@ function assignSlot(slotIndex, videoId) {
 
   customAssignments[slotIndex] = normalizedVideoId;
   renderSlotCell(slotIndex);
+  renderRowCaption(Math.floor(slotIndex / SLOTS_PER_HOUR));
+  renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync();
+
+  if (options.pulse !== false) {
+    pulseSlot(slotIndex);
+  }
+}
+
+function clearSlotAssignment(slotIndex) {
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SLOTS_PER_DAY) return;
+  if (customAssignments[slotIndex] === null) return;
+
+  customAssignments[slotIndex] = null;
+  renderSlotCell(slotIndex);
+  renderRowCaption(Math.floor(slotIndex / SLOTS_PER_HOUR));
+  renderCustomizerStatus();
+  updateCustomizeButtonState();
+  scheduleCustomPlaylistSync();
+}
+
+function pulseSlot(slotIndex) {
+  const cell = slotCellEls[slotIndex];
+  if (!cell) return;
+  cell.classList.remove("is-paint-pulse");
+  void cell.offsetWidth;
+  cell.classList.add("is-paint-pulse");
+  window.setTimeout(() => cell.classList.remove("is-paint-pulse"), 240);
 }
 
 function resetCustomLayout() {
   customAssignments = createEmptyAssignments();
   renderAllSlotCells();
+  renderAllRowCaptions();
+  renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync({ immediate: true });
   announce("Custom layout reset to default timeline.");
@@ -1082,8 +1202,60 @@ function renderSlotCell(slotIndex) {
     ? ` - ${formatDurationCompact(fan.duration)}`
     : "";
   const shortPart = fan.isShort ? " - short clip" : "";
+  cell.title = `${formatSlotLabel(slotIndex)} - ${fan.title} (${fan.country}${cityPart})${durationPart}${shortPart} (double-click to clear)`;
+}
 
-  cell.title = `${formatSlotLabel(slotIndex)} - ${fan.title} (${fan.country}${cityPart})${durationPart}${shortPart}`;
+function renderAllRowCaptions() {
+  for (let hour = 0; hour < 24; hour++) renderRowCaption(hour);
+}
+
+function renderRowCaption(hour) {
+  const caption = slotCaptionEls[hour];
+  if (!caption) return;
+
+  caption.classList.remove("is-assigned", "is-mixed");
+
+  const dominant = dominantHourAssignment(hour);
+  if (!dominant) {
+    caption.textContent = "Official";
+    return;
+  }
+
+  if (dominant.mixed) {
+    caption.classList.add("is-mixed");
+    caption.textContent = `${dominant.fan.city || dominant.fan.country} + more`;
+    return;
+  }
+
+  caption.classList.add("is-assigned");
+  const fan = dominant.fan;
+  caption.textContent = fan.city ? `${fan.city}, ${fan.country}` : fan.country;
+}
+
+function dominantHourAssignment(hour) {
+  const counts = new Map();
+  let totalAssigned = 0;
+  for (let i = 0; i < SLOTS_PER_HOUR; i++) {
+    const id = customAssignments[hour * SLOTS_PER_HOUR + i];
+    if (!id) continue;
+    totalAssigned += 1;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  if (totalAssigned === 0) return null;
+
+  let topId = null;
+  let topCount = 0;
+  for (const [id, c] of counts) {
+    if (c > topCount) {
+      topCount = c;
+      topId = id;
+    }
+  }
+  if (!topId) return null;
+  const fan = FAN_BY_ID.get(topId);
+  if (!fan) return null;
+
+  return { fan, mixed: counts.size > 1 };
 }
 
 function setActiveBrush(videoId) {
@@ -1091,337 +1263,371 @@ function setActiveBrush(videoId) {
   if (normalized === activeBrushVideoId) return;
 
   activeBrushVideoId = normalized;
-  renderSelectedBrushIndicator();
-  renderDesktopPicker();
+  renderBrushBar();
+  refreshPickerSelection();
   renderAllSlotCells();
 }
 
-function renderSelectedBrushIndicator() {
-  const label = document.getElementById("custom-brush-label");
+function renderBrushBar() {
+  const wrap = document.getElementById("customize-brush");
+  const swatch = document.getElementById("brush-swatch");
+  const info = document.getElementById("brush-info");
   const clearBtn = document.getElementById("custom-clear-brush");
-  if (!label || !clearBtn) return;
+  if (!wrap || !swatch || !info || !clearBtn) return;
 
-  label.textContent = "";
+  info.textContent = "";
 
   if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) {
-    const hint = document.createElement("span");
-    hint.className = "custom-brush-empty";
-    hint.textContent = "No brush selected. Choose a fan video and paint slots.";
-    label.appendChild(hint);
+    wrap.dataset.empty = "true";
+    swatch.style.background = "";
+    swatch.style.boxShadow = "";
+    const hint = document.createElement("p");
+    hint.className = "brush-hint";
+    hint.textContent = "Pick a video below or tap an empty slot to begin.";
+    info.appendChild(hint);
     clearBtn.disabled = true;
     return;
   }
 
   const fan = FAN_BY_ID.get(activeBrushVideoId);
+  wrap.dataset.empty = "false";
+  applyBrushSwatch(swatch, fan);
 
-  const prefix = document.createElement("span");
-  prefix.className = "custom-brush-prefix";
-  prefix.textContent = "Brush:";
+  const place = document.createElement("p");
+  place.className = "brush-place";
+  place.textContent = fan.city ? `${fan.city}, ${fan.country}` : fan.country;
 
-  const title = document.createElement("span");
-  title.className = "custom-brush-title";
+  const title = document.createElement("p");
+  title.className = "brush-title";
   title.textContent = fan.title;
 
-  label.appendChild(prefix);
-  label.appendChild(title);
-
+  const meta = document.createElement("p");
+  meta.className = "brush-meta";
   if (Number.isFinite(fan.duration)) {
-    const duration = document.createElement("span");
-    duration.className = "custom-brush-duration";
-    duration.textContent = formatDurationCompact(fan.duration);
-    label.appendChild(duration);
+    const dur = document.createElement("span");
+    dur.className = "brush-duration";
+    dur.textContent = formatDurationCompact(fan.duration);
+    meta.appendChild(dur);
+  }
+  if (fan.isShort) {
+    const short = document.createElement("span");
+    short.textContent = "Short fallback";
+    short.style.color = "rgba(255, 175, 107, 0.95)";
+    short.style.letterSpacing = "0.04em";
+    meta.appendChild(short);
   }
 
-  const place = document.createElement("span");
-  place.className = "custom-brush-place";
-  place.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
-  label.appendChild(place);
-
+  info.appendChild(place);
+  info.appendChild(title);
+  if (meta.childElementCount > 0) info.appendChild(meta);
   clearBtn.disabled = false;
 }
 
-function resetDesktopPickerState({ render = true } = {}) {
-  desktopPickerState = {
-    step: "country",
-    country: "",
-    city: "",
-    search: "",
-  };
-  if (render) renderDesktopPicker();
+function applyBrushSwatch(el, fan) {
+  if (!fan) return;
+  const hue = (hashStr(fan.videoId) % 24) - 12;
+  const inner = `hsl(${48 + hue}, 95%, 88%)`;
+  const mid = `hsl(${48 + hue}, 95%, 56%)`;
+  const outer = `hsl(${42 + hue}, 70%, 38%)`;
+  el.style.background = `radial-gradient(circle at 32% 28%, ${inner} 0%, ${mid} 42%, ${outer} 100%)`;
+  el.style.boxShadow = `0 0 0 1px rgba(0, 0, 0, 0.25), 0 8px 22px hsla(${48 + hue}, 95%, 56%, 0.32)`;
 }
 
-function renderDesktopPicker() {
-  const root = document.getElementById("custom-desktop-picker");
-  const list = document.getElementById("custom-video-list");
-  const stageEl = document.getElementById("custom-desktop-stage");
-  const pathEl = document.getElementById("custom-desktop-path");
-  const backBtn = document.getElementById("custom-desktop-back");
-  const searchInput = document.getElementById("custom-picker-search");
-  if (!root || !list || !stageEl || !pathEl || !backBtn || !searchInput) return;
-
-  if (desktopPickerState.step === "country") {
-    stageEl.textContent = "Select country";
-    pathEl.textContent = "Step 1 of 3";
-    backBtn.hidden = true;
-    searchInput.placeholder = "Search countries";
-  } else if (desktopPickerState.step === "city") {
-    stageEl.textContent = "Select city";
-    pathEl.textContent = desktopPickerState.country || "Step 2 of 3";
-    backBtn.hidden = false;
-    searchInput.placeholder = "Search cities";
-  } else {
-    stageEl.textContent = "Select video";
-    pathEl.textContent = [desktopPickerState.country, desktopPickerState.city]
-      .filter(Boolean)
-      .join(" / ");
-    backBtn.hidden = false;
-    searchInput.placeholder = "Search videos";
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
   }
+  return Math.abs(h);
+}
 
-  if (searchInput.value !== desktopPickerState.search) {
-    searchInput.value = desktopPickerState.search;
-  }
+function renderPickerLists() {
+  const desktopRoot = document.getElementById("custom-desktop-picker");
+  const sheetRoot = document.getElementById("custom-sheet-list");
+  if (desktopRoot) renderPickerInto(desktopRoot);
+  if (sheetRoot) renderPickerInto(sheetRoot);
+}
 
+function renderPickerInto(root) {
   root.textContent = "";
-  list.hidden = desktopPickerState.step !== "video";
-  if (list.hidden) list.textContent = "";
 
-  if (desktopPickerState.step === "country") {
-    renderDesktopCountryStep(root);
-  } else if (desktopPickerState.step === "city") {
-    renderDesktopCityStep(root);
-  } else {
-    renderDesktopVideoStep(root, list);
-  }
-}
-
-function onDesktopPickerBack() {
-  if (desktopPickerState.step === "video") {
-    const cities = getCitiesForCountry(desktopPickerState.country);
-    desktopPickerState.step = cities.length > 1 ? "city" : "country";
-  } else if (desktopPickerState.step === "city") {
-    desktopPickerState.step = "country";
-  } else {
-    return;
-  }
-
-  desktopPickerState.search = "";
-  renderDesktopPicker();
-}
-
-function renderDesktopCountryStep(root) {
-  const query = desktopPickerState.search.toLowerCase();
-  const countries = FAN_COUNTRIES.filter((country) => (
-    !query || country.toLowerCase().includes(query)
-  ));
-
-  const info = document.createElement("p");
-  info.className = "custom-picker-info";
-  info.textContent = "Pick a country to continue.";
-  root.appendChild(info);
-
-  if (countries.length === 0) {
+  if (FAN_VIDEOS.length === 0) {
     const empty = document.createElement("p");
     empty.className = "custom-list-empty";
-    empty.textContent = "No countries match your search.";
+    empty.textContent = "Fan video database unavailable.";
     root.appendChild(empty);
+    root.dataset.search = "false";
     return;
   }
 
-  const wall = document.createElement("div");
-  wall.className = "custom-chip-wall";
-  for (const country of countries) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-pill";
-    btn.textContent = country;
-    btn.addEventListener("click", () => {
-      selectDesktopCountry(country);
-    });
-    wall.appendChild(btn);
-  }
-  root.appendChild(wall);
-}
+  const query = pickerState.search.trim().toLowerCase();
+  const searching = query.length > 0;
+  root.dataset.search = searching ? "true" : "false";
 
-function selectDesktopCountry(country) {
-  desktopPickerState.country = country;
-  desktopPickerState.city = "";
-  desktopPickerState.search = "";
-
-  const cities = getCitiesForCountry(country);
-  if (cities.length <= 1) {
-    desktopPickerState.city = cities[0] || "";
-    const videos = getFilteredFanVideos(country, desktopPickerState.city);
-    if (videos.length === 1) {
-      setActiveBrush(videos[0].videoId);
-      announce(`Brush set to ${videos[0].title}.`);
-      desktopPickerState.step = "country";
-      desktopPickerState.country = "";
-      desktopPickerState.city = "";
-      desktopPickerState.search = "";
-      renderDesktopPicker();
-      return;
-    }
-    desktopPickerState.step = "video";
-    renderDesktopPicker();
-    return;
-  }
-
-  desktopPickerState.step = "city";
-  renderDesktopPicker();
-}
-
-function renderDesktopCityStep(root) {
-  const query = desktopPickerState.search.toLowerCase();
-  const cities = getCitiesForCountry(desktopPickerState.country).filter((city) => (
-    !query || city.toLowerCase().includes(query)
-  ));
-
-  const info = document.createElement("p");
-  info.className = "custom-picker-info";
-  info.textContent = `Choose city in ${desktopPickerState.country}.`;
-  root.appendChild(info);
-
-  if (cities.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "custom-list-empty";
-    empty.textContent = "No cities match your search.";
-    root.appendChild(empty);
-    return;
-  }
-
-  const wall = document.createElement("div");
-  wall.className = "custom-chip-wall";
-  for (const city of cities) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-pill";
-    btn.textContent = city;
-    btn.addEventListener("click", () => {
-      selectDesktopCity(city);
-    });
-    wall.appendChild(btn);
-  }
-  root.appendChild(wall);
-}
-
-function selectDesktopCity(city) {
-  desktopPickerState.city = city;
-  desktopPickerState.search = "";
-
-  const videos = getFilteredFanVideos(desktopPickerState.country, city);
-  if (videos.length === 1) {
-    setActiveBrush(videos[0].videoId);
-    announce(`Brush set to ${videos[0].title}.`);
-    desktopPickerState.step = "country";
-    desktopPickerState.country = "";
-    desktopPickerState.city = "";
-    desktopPickerState.search = "";
-    renderDesktopPicker();
-    return;
-  }
-
-  desktopPickerState.step = "video";
-  renderDesktopPicker();
-}
-
-function renderDesktopVideoStep(root, list) {
-  const info = document.createElement("p");
-  info.className = "custom-picker-info";
-  info.textContent = "Pick a video for painting slots.";
-  root.appendChild(info);
-
-  const query = desktopPickerState.search.toLowerCase();
-  const videos = getFilteredFanVideos(desktopPickerState.country, desktopPickerState.city)
-    .filter((fan) => (
-      !query
-      || fan.title.toLowerCase().includes(query)
-      || fan.city.toLowerCase().includes(query)
+  if (searching) {
+    const matches = FAN_VIDEOS.filter((fan) => (
+      fan.title.toLowerCase().includes(query)
+      || (fan.city && fan.city.toLowerCase().includes(query))
       || fan.country.toLowerCase().includes(query)
     ));
 
-  renderDesktopVideoList(root, list, videos);
-}
+    if (matches.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "custom-list-empty";
+      empty.textContent = "Nothing matches. Try a country or a city.";
+      root.appendChild(empty);
+      return;
+    }
 
-function renderDesktopVideoList(root, list, videos) {
-  if (!list || !root) return;
-  list.textContent = "";
+    const country = document.createElement("div");
+    country.className = "custom-country";
+    country.dataset.open = "true";
 
-  if (FAN_VIDEOS.length === 0) {
-    const msg = document.createElement("p");
-    msg.className = "custom-list-empty";
-    msg.textContent = "Fan video database unavailable.";
-    root.appendChild(msg);
+    const wrap = document.createElement("div");
+    wrap.className = "custom-country-body-wrap";
+
+    const body = document.createElement("div");
+    body.className = "custom-country-body";
+
+    const inner = document.createElement("div");
+    inner.className = "custom-country-body-inner";
+
+    for (const fan of matches) {
+      inner.appendChild(buildVideoOption(fan, { showCountry: true }));
+    }
+
+    body.appendChild(inner);
+    wrap.appendChild(body);
+    country.appendChild(wrap);
+    root.appendChild(country);
     return;
   }
 
-  if (videos.length === 0) {
-    const msg = document.createElement("p");
-    msg.className = "custom-list-empty";
-    msg.textContent = "No videos match your search.";
-    root.appendChild(msg);
-    return;
-  }
-  const fragment = document.createDocumentFragment();
-
-  for (const fan of videos) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-video-option";
-    btn.dataset.videoId = fan.videoId;
-    if (activeBrushVideoId === fan.videoId) {
-      btn.classList.add("is-selected");
-    }
-
-    const top = document.createElement("div");
-    top.className = "custom-video-top";
-
-    const title = document.createElement("span");
-    title.className = "custom-video-title";
-    title.textContent = fan.title;
-    top.appendChild(title);
-
-    if (Number.isFinite(fan.duration)) {
-      const dur = document.createElement("span");
-      dur.className = "custom-video-duration";
-      dur.textContent = formatDurationCompact(fan.duration);
-      top.appendChild(dur);
-    }
-
-    const meta = document.createElement("div");
-    meta.className = "custom-video-meta";
-    meta.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
-
-    if (fan.isShort) {
-      const shortBadge = document.createElement("span");
-      shortBadge.className = "custom-video-short-badge";
-      shortBadge.textContent = "< 4:00 (fallback)";
-      meta.appendChild(shortBadge);
-    }
-
-    btn.appendChild(top);
-    btn.appendChild(meta);
-    fragment.appendChild(btn);
-  }
-
-  list.appendChild(fragment);
-}
-
-function getCitiesForCountry(country) {
-  const set = new Set();
+  const byCountry = new Map();
   for (const fan of FAN_VIDEOS) {
-    if (country && fan.country !== country) continue;
-    if (fan.city) set.add(fan.city);
+    if (!byCountry.has(fan.country)) byCountry.set(fan.country, []);
+    byCountry.get(fan.country).push(fan);
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  const sortedCountries = Array.from(byCountry.keys()).sort((a, b) => a.localeCompare(b));
+
+  for (const country of sortedCountries) {
+    const videos = byCountry.get(country);
+    const isOpen = pickerState.openCountry === country;
+    const hasSelected = activeBrushVideoId && videos.some((v) => v.videoId === activeBrushVideoId);
+
+    const item = document.createElement("div");
+    item.className = "custom-country";
+    item.dataset.country = country;
+    if (isOpen) item.dataset.open = "true";
+    if (hasSelected) item.dataset.hasSelected = "true";
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "custom-country-header";
+    header.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    header.dataset.toggleCountry = country;
+
+    const chev = document.createElement("span");
+    chev.className = "custom-country-chevron";
+    chev.setAttribute("aria-hidden", "true");
+    header.appendChild(chev);
+
+    const name = document.createElement("span");
+    name.className = "custom-country-name";
+    name.textContent = country;
+    header.appendChild(name);
+
+    const count = document.createElement("span");
+    count.className = "custom-country-count";
+    const cityCount = new Set(videos.map((v) => v.city).filter(Boolean)).size;
+    count.textContent = cityCount > 0
+      ? `${cityCount} ${cityCount === 1 ? "city" : "cities"} · ${videos.length} ${videos.length === 1 ? "video" : "videos"}`
+      : `${videos.length} ${videos.length === 1 ? "video" : "videos"}`;
+    header.appendChild(count);
+
+    const dot = document.createElement("span");
+    dot.className = "custom-country-dot";
+    dot.setAttribute("aria-hidden", "true");
+    header.appendChild(dot);
+
+    item.appendChild(header);
+
+    const wrap = document.createElement("div");
+    wrap.className = "custom-country-body-wrap";
+
+    const body = document.createElement("div");
+    body.className = "custom-country-body";
+
+    const inner = document.createElement("div");
+    inner.className = "custom-country-body-inner";
+    for (const fan of videos) {
+      inner.appendChild(buildVideoOption(fan, { showCountry: false }));
+    }
+
+    body.appendChild(inner);
+    wrap.appendChild(body);
+    item.appendChild(wrap);
+    root.appendChild(item);
+  }
 }
 
-function getFilteredFanVideos(country, city) {
-  return FAN_VIDEOS.filter((fan) => {
-    if (country && fan.country !== country) return false;
-    if (city && fan.city !== city) return false;
-    return true;
-  });
+function buildVideoOption(fan, { showCountry }) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "custom-video-option";
+  btn.dataset.videoId = fan.videoId;
+  if (activeBrushVideoId === fan.videoId) btn.classList.add("is-selected");
+  if (fan.isShort) btn.classList.add("is-short");
+
+  const radio = document.createElement("span");
+  radio.className = "custom-video-radio";
+  radio.setAttribute("aria-hidden", "true");
+  btn.appendChild(radio);
+
+  const body = document.createElement("div");
+  body.className = "custom-video-body";
+
+  const city = document.createElement("span");
+  city.className = "custom-video-city";
+  const cityText = fan.city || fan.country;
+  city.textContent = showCountry && fan.city
+    ? `${fan.city} · ${fan.country}`
+    : cityText;
+  body.appendChild(city);
+
+  const title = document.createElement("span");
+  title.className = "custom-video-title";
+  title.textContent = fan.title;
+  body.appendChild(title);
+
+  btn.appendChild(body);
+
+  if (Number.isFinite(fan.duration)) {
+    const dur = document.createElement("span");
+    dur.className = "custom-video-duration";
+    dur.textContent = formatDurationCompact(fan.duration);
+    btn.appendChild(dur);
+  }
+
+  return btn;
+}
+
+function refreshPickerSelection() {
+  const roots = [
+    document.getElementById("custom-desktop-picker"),
+    document.getElementById("custom-sheet-list"),
+  ].filter(Boolean);
+
+  for (const root of roots) {
+    for (const opt of root.querySelectorAll(".custom-video-option")) {
+      const isSelected = opt.dataset.videoId === activeBrushVideoId;
+      opt.classList.toggle("is-selected", isSelected);
+    }
+    for (const item of root.querySelectorAll(".custom-country")) {
+      const country = item.dataset.country;
+      if (!country) continue;
+      const hasSelected = activeBrushVideoId && Array.from(item.querySelectorAll(".custom-video-option")).some((o) => o.dataset.videoId === activeBrushVideoId);
+      if (hasSelected) item.dataset.hasSelected = "true";
+      else delete item.dataset.hasSelected;
+    }
+  }
+}
+
+function onPickerListClick(e) {
+  if (!(e.target instanceof Element)) return;
+
+  const header = e.target.closest("[data-toggle-country]");
+  if (header instanceof HTMLElement) {
+    const country = header.dataset.toggleCountry || "";
+    pickerState.openCountry = pickerState.openCountry === country ? "" : country;
+    renderPickerLists();
+    return;
+  }
+
+  const option = e.target.closest(".custom-video-option");
+  if (option instanceof HTMLButtonElement) {
+    const videoId = option.dataset.videoId;
+    if (!videoId || !FAN_BY_ID.has(videoId)) return;
+
+    const fan = FAN_BY_ID.get(videoId);
+
+    if (Number.isInteger(pendingPaintSlotIndex)) {
+      const slot = pendingPaintSlotIndex;
+      pendingPaintSlotIndex = null;
+      setActiveBrush(videoId);
+      assignSlot(slot, videoId);
+      announce(`Painted ${formatSlotLabel(slot)} with ${fan.title}. Brush loaded for more painting.`);
+      return;
+    }
+
+    if (mobileSheetState.open && Number.isInteger(mobileSheetState.slotIndex)) {
+      const slot = mobileSheetState.slotIndex;
+      setActiveBrush(videoId);
+      assignSlot(slot, videoId);
+      closeMobileSheet();
+      announce(`Painted ${formatSlotLabel(slot)} with ${fan.title}.`);
+      return;
+    }
+
+    if (activeBrushVideoId === videoId) {
+      setActiveBrush(null);
+      announce("Brush cleared.");
+    } else {
+      setActiveBrush(videoId);
+      announce(`Brush loaded: ${fan.title}.`);
+    }
+  }
+}
+
+function tickCustomizerNow() {
+  const min = currentMinuteOfDay();
+  const hour = Math.floor(min / 60);
+  const slotInHour = Math.floor((min % 60) / SLOT_MINUTES);
+  const slotIndex = hour * SLOTS_PER_HOUR + slotInHour;
+  if (!Number.isInteger(slotIndex)) return;
+
+  const grid = document.getElementById("customize-grid");
+  if (!grid) return;
+  const row = grid.querySelector(`.custom-row[data-hour="${hour}"]`);
+  const slot = slotCellEls[slotIndex];
+
+  if (row && row !== lastNowHourRow) {
+    if (lastNowHourRow) lastNowHourRow.classList.remove("is-now");
+    row.classList.add("is-now");
+    lastNowHourRow = row;
+  }
+  if (slot && slot !== lastNowSlotEl) {
+    if (lastNowSlotEl) lastNowSlotEl.classList.remove("is-now-tick");
+    slot.classList.add("is-now-tick");
+    lastNowSlotEl = slot;
+  }
+}
+
+function clearNowMarker() {
+  if (lastNowHourRow) {
+    lastNowHourRow.classList.remove("is-now");
+    lastNowHourRow = null;
+  }
+  if (lastNowSlotEl) {
+    lastNowSlotEl.classList.remove("is-now-tick");
+    lastNowSlotEl = null;
+  }
+}
+
+function renderCustomizerStatus() {
+  const status = document.getElementById("customize-status");
+  const done = document.getElementById("customize-done");
+  const count = countAssignedSlots();
+
+  if (status) {
+    status.textContent = count === 0
+      ? "All hours · original timeline"
+      : `${count} of ${SLOTS_PER_DAY} slots · ${Math.round((count / SLOTS_PER_DAY) * 100)}%`;
+  }
+  if (done) {
+    done.textContent = count > 0 ? `Done · ${count} set` : "Done";
+  }
 }
 
 function countAssignedSlots() {
@@ -1616,246 +1822,43 @@ function isMobilePickerViewport() {
   return window.matchMedia(`(max-width: ${MOBILE_PICKER_BREAKPOINT}px)`).matches;
 }
 
-function openMobilePicker(slotIndex) {
-  if (!isMobilePickerViewport()) return;
+function openMobileSheet(slotIndex) {
+  const sheet = document.getElementById("custom-mobile-picker");
+  if (!sheet) return;
 
-  mobilePickerState = {
-    open: true,
-    slotIndex,
-    step: "country",
-    country: "",
-    city: "",
-  };
-  renderMobilePicker();
+  mobileSheetState = { open: true, slotIndex };
+
+  const titleEl = document.getElementById("custom-sheet-title");
+  const eyebrowEl = document.getElementById("custom-sheet-eyebrow");
+  if (titleEl) {
+    titleEl.textContent = Number.isInteger(slotIndex)
+      ? `Paint slot ${formatSlotLabel(slotIndex)}`
+      : "Pick a video";
+  }
+  if (eyebrowEl) {
+    eyebrowEl.textContent = Number.isInteger(slotIndex) ? "Slot" : "Browse";
+  }
+
+  sheet.hidden = false;
+  renderPickerLists();
+  requestAnimationFrame(() => {
+    sheet.dataset.open = "true";
+  });
 }
 
-function closeMobilePicker() {
-  mobilePickerState = {
-    open: false,
-    slotIndex: null,
-    step: "country",
-    country: "",
-    city: "",
-  };
-  renderMobilePicker();
-}
-
-function renderMobilePicker() {
-  const panel = document.getElementById("custom-mobile-picker");
-  if (!panel) return;
-
-  if (!customizerOpen || !isMobilePickerViewport() || !mobilePickerState.open) {
-    panel.hidden = true;
-    panel.textContent = "";
+function closeMobileSheet({ immediate = false } = {}) {
+  const sheet = document.getElementById("custom-mobile-picker");
+  mobileSheetState = { open: false, slotIndex: null };
+  if (!sheet) return;
+  sheet.dataset.open = "false";
+  if (immediate) {
+    sheet.hidden = true;
     return;
   }
-
-  panel.hidden = false;
-  panel.textContent = "";
-
-  const head = document.createElement("div");
-  head.className = "custom-mobile-head";
-
-  const title = document.createElement("div");
-  title.className = "custom-mobile-title";
-  title.textContent = `Pick for ${formatSlotLabel(mobilePickerState.slotIndex)}`;
-
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "custom-mobile-close";
-  closeBtn.textContent = "Close";
-  closeBtn.addEventListener("click", closeMobilePicker);
-
-  head.appendChild(title);
-  head.appendChild(closeBtn);
-  panel.appendChild(head);
-
-  if (mobilePickerState.step !== "country") {
-    const backBtn = document.createElement("button");
-    backBtn.type = "button";
-    backBtn.className = "custom-mobile-back";
-    backBtn.textContent = "Back";
-    backBtn.addEventListener("click", onMobilePickerBack);
-    panel.appendChild(backBtn);
-  }
-
-  if (mobilePickerState.step === "country") {
-    renderMobileCountryStep(panel);
-  } else if (mobilePickerState.step === "city") {
-    renderMobileCityStep(panel);
-  } else {
-    renderMobileVideoStep(panel);
-  }
-}
-
-function onMobilePickerBack() {
-  if (mobilePickerState.step === "video") {
-    const cities = getCitiesForCountry(mobilePickerState.country);
-    mobilePickerState.step = cities.length > 1 ? "city" : "country";
-    renderMobilePicker();
-    return;
-  }
-
-  if (mobilePickerState.step === "city") {
-    mobilePickerState.step = "country";
-    renderMobilePicker();
-  }
-}
-
-function renderMobileCountryStep(panel) {
-  const info = document.createElement("p");
-  info.className = "custom-mobile-info";
-  info.textContent = "Choose a country";
-  panel.appendChild(info);
-
-  const pills = document.createElement("div");
-  pills.className = "custom-mobile-pills";
-
-  for (const country of FAN_COUNTRIES) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-pill";
-    btn.textContent = country;
-    btn.addEventListener("click", () => {
-      chooseMobileCountry(country);
-    });
-    pills.appendChild(btn);
-  }
-
-  panel.appendChild(pills);
-}
-
-function chooseMobileCountry(country) {
-  mobilePickerState.country = country;
-  mobilePickerState.city = "";
-
-  const cities = getCitiesForCountry(country);
-  if (cities.length <= 1) {
-    mobilePickerState.city = cities[0] || "";
-
-    const videos = getFilteredFanVideos(country, mobilePickerState.city);
-    if (videos.length === 1) {
-      applyMobileVideoChoice(videos[0]);
-      return;
-    }
-
-    mobilePickerState.step = "video";
-    renderMobilePicker();
-    return;
-  }
-
-  mobilePickerState.step = "city";
-  renderMobilePicker();
-}
-
-function renderMobileCityStep(panel) {
-  const info = document.createElement("p");
-  info.className = "custom-mobile-info";
-  info.textContent = `Choose city in ${mobilePickerState.country}`;
-  panel.appendChild(info);
-
-  const pills = document.createElement("div");
-  pills.className = "custom-mobile-pills";
-
-  const cities = getCitiesForCountry(mobilePickerState.country);
-  for (const city of cities) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-pill";
-    btn.textContent = city;
-    btn.addEventListener("click", () => {
-      chooseMobileCity(city);
-    });
-    pills.appendChild(btn);
-  }
-
-  panel.appendChild(pills);
-}
-
-function chooseMobileCity(city) {
-  mobilePickerState.city = city;
-
-  const videos = getFilteredFanVideos(mobilePickerState.country, city);
-  if (videos.length === 1) {
-    applyMobileVideoChoice(videos[0]);
-    return;
-  }
-
-  mobilePickerState.step = "video";
-  renderMobilePicker();
-}
-
-function renderMobileVideoStep(panel) {
-  const info = document.createElement("p");
-  info.className = "custom-mobile-info";
-  info.textContent = "Choose video";
-  panel.appendChild(info);
-
-  const list = document.createElement("div");
-  list.className = "custom-mobile-video-list";
-
-  const videos = getFilteredFanVideos(mobilePickerState.country, mobilePickerState.city);
-  for (const fan of videos) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "custom-mobile-video-option";
-
-    const top = document.createElement("div");
-    top.className = "custom-mobile-video-top";
-
-    const title = document.createElement("span");
-    title.className = "custom-mobile-video-title";
-    title.textContent = fan.title;
-    top.appendChild(title);
-
-    if (Number.isFinite(fan.duration)) {
-      const dur = document.createElement("span");
-      dur.className = "custom-mobile-video-duration";
-      dur.textContent = formatDurationCompact(fan.duration);
-      top.appendChild(dur);
-    }
-
-    const meta = document.createElement("div");
-    meta.className = "custom-mobile-video-meta";
-    meta.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
-
-    if (fan.isShort) {
-      const badge = document.createElement("span");
-      badge.className = "custom-video-short-badge";
-      badge.textContent = "< 4:00 (fallback)";
-      meta.appendChild(badge);
-    }
-
-    btn.appendChild(top);
-    btn.appendChild(meta);
-    btn.addEventListener("click", () => {
-      applyMobileVideoChoice(fan);
-    });
-
-    list.appendChild(btn);
-  }
-
-  if (videos.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "custom-list-empty";
-    empty.textContent = "No videos for this selection.";
-    panel.appendChild(empty);
-  } else {
-    panel.appendChild(list);
-  }
-}
-
-function applyMobileVideoChoice(fan) {
-  if (!fan || !FAN_BY_ID.has(fan.videoId)) return;
-
-  setActiveBrush(fan.videoId);
-
-  if (Number.isInteger(mobilePickerState.slotIndex)) {
-    assignSlot(mobilePickerState.slotIndex, fan.videoId);
-  }
-
-  closeMobilePicker();
-  announce(`Selected ${fan.title} as paint brush.`);
+  window.setTimeout(() => {
+    if (mobileSheetState.open) return;
+    sheet.hidden = true;
+  }, 280);
 }
 
 function wirePwaInstall() {
