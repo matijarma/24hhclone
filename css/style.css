@@ -342,7 +342,7 @@ body.overlay-hidden #toggle-overlay {
 .clock-widget-time {
   position: absolute;
   left: 50%;
-  top: 41%;
+  top: 36%;
   transform: translate(-50%, -50%);
   z-index: 2;
   color: var(--yellow);
@@ -465,14 +465,17 @@ footer {
   transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
 }
 footer a {
-  color: var(--yellow);
+  color: rgba(252, 212, 46, 0.78);
   text-decoration: underline;
+  text-decoration-color: rgba(252, 212, 46, 0.55);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+  font-weight: 500;
 }
 footer a:hover,
 footer a:focus-visible {
-  color: #fff0a4;
+  color: rgba(252, 212, 46, 0.94);
+  text-decoration-color: rgba(252, 212, 46, 0.85);
   outline: none;
 }
 
