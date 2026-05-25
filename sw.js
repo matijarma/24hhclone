@@ -1,4 +1,4 @@
-const CACHE_NAME = "24hh-v1";
+const CACHE_NAME = "24hh-v2";
 const APP_SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const APP_SHELL_ASSETS = [
   "./js/slider.js",
   "./js/time.js",
   "./js/hours.js",
+  "./wearehappyfrom.com.json",
   "./per-hour-yt-urls.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

@@ -1,4 +1,4 @@
-// 24 Hours of Happy - bootstrap (rev 3)
+// 24 Hours of Happy - bootstrap (rev 4)
 //
 // Dev tip: some browsers block fetch() on file:// URLs. Serve over HTTP:
 //   python -m http.server 8765
@@ -23,9 +23,9 @@ import {
   mute,
   isMuted,
   getCurrentMinuteOfDay,
-  getCurrentHourLoaded,
-  getCurrentTimeSeconds,
-  onHourEnded,
+  getCurrentMinuteExact,
+  getCurrentSecondOfDay,
+  setCustomPlaylist,
 } from "./player.js";
 import {
   initSlider,
@@ -37,12 +37,45 @@ import {
 const TIME_FORMAT_24H = "24h";
 const TIME_FORMAT_AMPM = "ampm";
 const STORAGE_TIME_FORMAT_KEY = "24hh.time-format";
+const STORAGE_CUSTOM_LAYOUT_KEY = "24hh.custom-layout.v1";
+
 const CLOCK_DOUBLE_TAP_WINDOW_MS = 420;
 const CLOCK_SINGLE_TAP_DELAY_MS = 240;
 const UI_IDLE_DELAY_MS = 8000;
+const CUSTOM_SYNC_DEBOUNCE_MS = 140;
+const MOBILE_PICKER_BREAKPOINT = 900;
+
+const SLOT_MINUTES = 4;
+const SLOT_SECONDS = SLOT_MINUTES * 60;
+const SLOTS_PER_HOUR = 15;
+const SLOTS_PER_DAY = 24 * SLOTS_PER_HOUR;
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 let HOURS = [];
+let FAN_VIDEOS = [];
+let FAN_BY_ID = new Map();
+let FAN_COUNTRIES = [];
+
+let customAssignments = createEmptyAssignments();
+let customFilters = {
+  country: "",
+  city: "",
+};
+let activeBrushVideoId = null;
+let slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
+let customizerOpen = false;
+let customizerReady = false;
+let paintDragging = false;
+let customSyncTimer = null;
+let mobilePickerState = {
+  open: false,
+  slotIndex: null,
+  step: "country",
+  country: "",
+  city: "",
+};
+
 let manualOverride = false;
 let timeFormatMode = loadTimeFormatMode();
 let clockWidgetMode = false;
@@ -66,6 +99,19 @@ async function boot() {
     return;
   }
 
+  try {
+    FAN_VIDEOS = await loadFanVideos();
+    FAN_BY_ID = new Map(FAN_VIDEOS.map((entry) => [entry.videoId, entry]));
+    FAN_COUNTRIES = Array.from(new Set(FAN_VIDEOS.map((entry) => entry.country))).sort((a, b) => a.localeCompare(b));
+  } catch (err) {
+    FAN_VIDEOS = [];
+    FAN_BY_ID = new Map();
+    FAN_COUNTRIES = [];
+    console.warn("Failed to load fan database:", err);
+  }
+
+  customAssignments = loadCustomAssignments(FAN_BY_ID);
+
   const deep = parseDeepLink();
   const startMin = deep ? deep.minuteOfDay : currentMinuteOfDay();
   const startSec = deep ? deep.secondsInMinute : currentSecondsInMinute();
@@ -79,6 +125,7 @@ async function boot() {
   initClockWidgetDial();
   sliderSetLabelMode(timeFormatMode);
 
+  initCustomizerUi();
   updateFormatToggleButton();
   updateReadout(startMin);
   updateClockWidgetOverlay();
@@ -87,18 +134,8 @@ async function boot() {
     hours: HOURS,
     initialMinuteOfDay: startMin,
     initialSecondsInMinute: startSec,
-  });
-
-  onHourEnded(() => {
-    const loadedHour = getCurrentHourLoaded();
-    const expected = manualOverride && loadedHour !== null
-      ? (loadedHour + 1) % 24
-      : Math.floor(currentMinuteOfDay() / 60);
-    const nextMin = expected * 60;
-    playerSetMinuteOfDay(nextMin, { force: true });
-    sliderSetMinuteOfDay(nextMin);
-    updateReadout(nextMin);
-    updateClockWidgetOverlay();
+    assignmentsBySlot: customAssignments,
+    fanVideos: FAN_VIDEOS,
   });
 
   wireControls();
@@ -113,7 +150,7 @@ async function boot() {
 
 function onSliderChange(min, { committed }) {
   manualOverride = true;
-  playerSetMinuteOfDay(min);
+  void playerSetMinuteOfDay(min);
   updateReadout(min);
   if (committed) {
     writeDeepLink(min);
@@ -125,7 +162,7 @@ function resyncNow() {
   manualOverride = false;
   const min = currentMinuteOfDay();
   const sec = currentSecondsInMinute();
-  playerSetMinuteOfDay(min, { secondsInMinute: sec, force: true });
+  void playerSetMinuteOfDay(min, { secondsInMinute: sec, force: true });
   sliderSetMinuteOfDay(min);
   updateReadout(min);
   updateClockWidgetOverlay();
@@ -141,9 +178,12 @@ function wireControls() {
   const formatBtn = document.getElementById("format-toggle");
   const installBtn = document.getElementById("install-app");
   const widgetBtn = document.getElementById("clock-widget");
+  const customizeBtn = document.getElementById("customize-playlist");
 
   nowBtn?.addEventListener("click", resyncNow);
-  playPauseBtn?.addEventListener("click", () => playPauseToggle());
+  playPauseBtn?.addEventListener("click", () => {
+    void playPauseToggle();
+  });
   muteBtn?.addEventListener("click", () => {
     void toggleMuteState();
   });
@@ -157,9 +197,11 @@ function wireControls() {
   widgetBtn?.addEventListener("click", () => {
     void enterClockWidgetMode();
   });
+  customizeBtn?.addEventListener("click", openCustomizerModal);
 
   updateOverlayToggleButton(isOverlayHidden());
   updateFormatToggleButton();
+  updateCustomizeButtonState();
 }
 
 function wireNormalQuickActions() {
@@ -168,7 +210,7 @@ function wireNormalQuickActions() {
 }
 
 function onNormalModeClick(e) {
-  if (clockWidgetMode) return;
+  if (clockWidgetMode || customizerOpen) return;
   if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeSingleTapExcluded(e.target)) return;
 
@@ -184,13 +226,13 @@ function onNormalModeClick(e) {
   clearNormalTapTimer();
   normalTapTimer = window.setTimeout(() => {
     normalTapTimer = null;
-    if (clockWidgetMode) return;
+    if (clockWidgetMode || customizerOpen) return;
     void toggleMuteState();
   }, CLOCK_SINGLE_TAP_DELAY_MS);
 }
 
 function onNormalModeDoubleClick(e) {
-  if (clockWidgetMode) return;
+  if (clockWidgetMode || customizerOpen) return;
   if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeDoubleTapExcluded(e.target)) return;
   e.preventDefault();
@@ -208,18 +250,26 @@ function clearNormalTapTimer() {
 
 function isNormalModeSingleTapExcluded(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(".controls, #slider, footer, header, a, button"));
+  return Boolean(target.closest(".controls, #slider, footer, header, a, button, .customize-modal"));
 }
 
 function isNormalModeDoubleTapExcluded(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(".controls, footer, header, a, button"));
+  return Boolean(target.closest(".controls, footer, header, a, button, .customize-modal"));
 }
 
 function wireGlobalKeys() {
   document.addEventListener("keydown", (e) => {
     const tag = e.target && e.target.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+    if (customizerOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeCustomizerModal();
+      }
+      return;
+    }
 
     if (clockWidgetMode) {
       if (e.key === "Escape") {
@@ -234,7 +284,7 @@ function wireGlobalKeys() {
     const key = e.key.toLowerCase();
     if (e.key === " " || e.code === "Space") {
       e.preventDefault();
-      playPauseToggle();
+      void playPauseToggle();
     } else if (key === "n") {
       e.preventDefault();
       resyncNow();
@@ -244,6 +294,9 @@ function wireGlobalKeys() {
     } else if (key === "m") {
       e.preventDefault();
       void toggleMuteState();
+    } else if (key === "c") {
+      e.preventDefault();
+      openCustomizerModal();
     }
   });
 }
@@ -286,6 +339,10 @@ function toggleTimeFormat() {
   updateFormatToggleButton();
   updateReadout(getClockReference().minuteFloor);
   announce(`Time format set to ${timeFormatMode === TIME_FORMAT_24H ? "24-hour" : "AM/PM"}.`);
+
+  if (customizerOpen) {
+    renderAllSlotCells();
+  }
 }
 
 function updateFormatToggleButton() {
@@ -338,7 +395,7 @@ function watchMuteState() {
 function startTickers(svg) {
   function tick() {
     const isDragging = svg.classList.contains("dragging");
-    if (!clockWidgetMode && !isDragging) {
+    if (!clockWidgetMode && !isDragging && !customizerOpen) {
       const playerMin = getCurrentMinuteOfDay();
       if (playerMin !== null) {
         sliderSetMinuteOfDay(playerMin);
@@ -360,19 +417,36 @@ function startTickers(svg) {
 
   setInterval(() => {
     if (manualOverride) return;
-    const expectedHour = Math.floor(currentMinuteOfDay() / 60);
-    const loaded = getCurrentHourLoaded();
-    if (loaded !== null && expectedHour !== loaded) {
-      const nextMin = expectedHour * 60 + (new Date().getMinutes());
-      playerSetMinuteOfDay(nextMin, {
-        secondsInMinute: currentSecondsInMinute(),
-        force: true,
-      });
-      sliderSetMinuteOfDay(nextMin);
-      updateReadout(nextMin);
-      updateClockWidgetOverlay();
-    }
+
+    const expectedSec = (currentMinuteOfDay() * 60) + currentSecondsInMinute();
+    const playerSec = getCurrentSecondOfDay();
+    if (!Number.isFinite(playerSec)) return;
+
+    const drift = shortestSecondDelta(playerSec, expectedSec);
+    if (Math.abs(drift) <= 4) return;
+
+    const nextMin = currentMinuteOfDay();
+    const nextSecInMinute = currentSecondsInMinute();
+
+    void playerSetMinuteOfDay(nextMin, {
+      secondsInMinute: nextSecInMinute,
+      force: true,
+    });
+
+    sliderSetMinuteOfDay(nextMin);
+    updateReadout(nextMin);
+    updateClockWidgetOverlay();
   }, 1000);
+}
+
+function shortestSecondDelta(actual, expected) {
+  let diff = actual - expected;
+  const dayHalf = 24 * 60 * 60 / 2;
+  const day = 24 * 60 * 60;
+
+  while (diff > dayHalf) diff -= day;
+  while (diff < -dayHalf) diff += day;
+  return diff;
 }
 
 function watchPlayState() {
@@ -388,7 +462,7 @@ function watchPlayState() {
 }
 
 async function enterClockWidgetMode() {
-  if (clockWidgetMode) return;
+  if (clockWidgetMode || customizerOpen) return;
 
   clearNormalTapTimer();
   normalTapLastAt = 0;
@@ -569,17 +643,13 @@ function appendSvg(parent, tagName, attrs) {
 }
 
 function getClockReference() {
-  const loadedHour = getCurrentHourLoaded();
-  if (loadedHour !== null) {
-    const seconds = getCurrentTimeSeconds();
-    if (Number.isFinite(seconds)) {
-      const clampedSeconds = Math.max(0, Math.min(3599.999, seconds));
-      const minuteExact = normalizeMinute(loadedHour * 60 + (clampedSeconds / 60));
-      return {
-        minuteExact,
-        minuteFloor: Math.floor(minuteExact),
-      };
-    }
+  const minuteExact = getCurrentMinuteExact();
+  if (Number.isFinite(minuteExact)) {
+    const normalized = normalizeMinute(minuteExact);
+    return {
+      minuteExact: normalized,
+      minuteFloor: Math.floor(normalized),
+    };
   }
 
   const playerMin = getCurrentMinuteOfDay();
@@ -589,12 +659,12 @@ function getClockReference() {
   }
 
   const now = new Date();
-  const minuteExact = normalizeMinute(
+  const fallback = normalizeMinute(
     now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60),
   );
   return {
-    minuteExact,
-    minuteFloor: Math.floor(minuteExact),
+    minuteExact: fallback,
+    minuteFloor: Math.floor(fallback),
   };
 }
 
@@ -610,6 +680,532 @@ function updateReadout(min) {
 function formatMinute(minuteOfDay, { force12h = false } = {}) {
   if (force12h) return formatTime12h(minuteOfDay);
   return formatTime(minuteOfDay, timeFormatMode);
+}
+
+function initCustomizerUi() {
+  const modal = document.getElementById("customize-modal");
+  const grid = document.getElementById("customize-grid");
+  const list = document.getElementById("custom-video-list");
+  const countrySelect = document.getElementById("custom-filter-country");
+  const citySelect = document.getElementById("custom-filter-city");
+  const closeTopBtn = document.getElementById("customize-close");
+  const closeBottomBtn = document.getElementById("customize-done");
+  const resetBtn = document.getElementById("custom-reset");
+  const clearBrushBtn = document.getElementById("custom-clear-brush");
+
+  if (!modal || !grid || !list || !countrySelect || !citySelect) {
+    return;
+  }
+
+  buildCustomizerGrid(grid);
+  renderDesktopFilters();
+  renderDesktopVideoList();
+  renderSelectedBrushIndicator();
+  renderAllSlotCells();
+  renderMobilePicker();
+
+  countrySelect.addEventListener("change", () => {
+    customFilters.country = countrySelect.value;
+    customFilters.city = "";
+    renderDesktopFilters();
+    renderDesktopVideoList();
+  });
+
+  citySelect.addEventListener("change", () => {
+    customFilters.city = citySelect.value;
+    renderDesktopVideoList();
+  });
+
+  list.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+    const option = e.target.closest("button[data-video-id]");
+    if (!(option instanceof HTMLButtonElement)) return;
+
+    const videoId = option.dataset.videoId;
+    if (!videoId || !FAN_BY_ID.has(videoId)) return;
+
+    setActiveBrush(videoId);
+  });
+
+  grid.addEventListener("pointerdown", onGridPointerDown);
+  grid.addEventListener("pointerover", onGridPointerOver);
+  window.addEventListener("pointerup", () => {
+    paintDragging = false;
+  });
+
+  closeTopBtn?.addEventListener("click", closeCustomizerModal);
+  closeBottomBtn?.addEventListener("click", closeCustomizerModal);
+  resetBtn?.addEventListener("click", resetCustomLayout);
+  clearBrushBtn?.addEventListener("click", () => {
+    setActiveBrush(null);
+  });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      closeCustomizerModal();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    renderMobilePicker();
+  });
+
+  customizerReady = true;
+  updateCustomizeButtonState();
+}
+
+function openCustomizerModal() {
+  if (!customizerReady) return;
+  if (FAN_VIDEOS.length === 0) {
+    announce("Fan video database is unavailable.");
+    return;
+  }
+
+  const modal = document.getElementById("customize-modal");
+  if (!modal) return;
+
+  customizerOpen = true;
+  modal.hidden = false;
+  document.body.classList.add("customize-open");
+
+  renderDesktopFilters();
+  renderDesktopVideoList();
+  renderSelectedBrushIndicator();
+  renderAllSlotCells();
+  renderMobilePicker();
+
+  requestAnimationFrame(() => {
+    const closeBtn = document.getElementById("customize-close");
+    closeBtn?.focus();
+  });
+}
+
+function closeCustomizerModal() {
+  const modal = document.getElementById("customize-modal");
+  if (!modal) return;
+
+  customizerOpen = false;
+  paintDragging = false;
+  closeMobilePicker();
+  modal.hidden = true;
+  document.body.classList.remove("customize-open");
+}
+
+function updateCustomizeButtonState() {
+  const btn = document.getElementById("customize-playlist");
+  if (!btn) return;
+
+  const assignedCount = countAssignedSlots();
+  btn.textContent = assignedCount > 0
+    ? `Customize (${assignedCount})`
+    : "Customize";
+
+  if (FAN_VIDEOS.length === 0) {
+    btn.disabled = true;
+    btn.setAttribute("aria-disabled", "true");
+    btn.title = "Fan video database unavailable";
+  } else {
+    btn.disabled = false;
+    btn.removeAttribute("aria-disabled");
+    btn.title = "Customize 24h slots";
+  }
+}
+
+function buildCustomizerGrid(gridRoot) {
+  slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
+  gridRoot.textContent = "";
+
+  for (let hour = 0; hour < 24; hour++) {
+    const row = document.createElement("div");
+    row.className = "custom-row";
+
+    const hourLabel = document.createElement("div");
+    hourLabel.className = "custom-row-label";
+    hourLabel.textContent = String(hour).padStart(2, "0");
+
+    const slotsWrap = document.createElement("div");
+    slotsWrap.className = "custom-row-slots";
+
+    for (let slotInHour = 0; slotInHour < SLOTS_PER_HOUR; slotInHour++) {
+      const slotIndex = (hour * SLOTS_PER_HOUR) + slotInHour;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "custom-slot";
+      btn.dataset.slotIndex = String(slotIndex);
+      btn.textContent = String(slotInHour + 1).padStart(2, "0");
+      btn.setAttribute("aria-label", `Slot ${formatSlotLabel(slotIndex)}`);
+      slotsWrap.appendChild(btn);
+      slotCellEls[slotIndex] = btn;
+    }
+
+    row.appendChild(hourLabel);
+    row.appendChild(slotsWrap);
+    gridRoot.appendChild(row);
+  }
+}
+
+function onGridPointerDown(e) {
+  if (!(e.target instanceof Element)) return;
+  if (e.button !== undefined && e.button !== 0) return;
+
+  const slot = extractSlotIndexFromTarget(e.target);
+  if (slot === null) return;
+
+  if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
+    paintDragging = true;
+    assignSlot(slot, activeBrushVideoId);
+    e.preventDefault();
+    return;
+  }
+
+  if (isMobilePickerViewport()) {
+    openMobilePicker(slot);
+    e.preventDefault();
+    return;
+  }
+
+  announce("Choose a fan video first, then paint slots.");
+}
+
+function onGridPointerOver(e) {
+  if (!paintDragging) return;
+  if (!(e.target instanceof Element)) return;
+
+  const slot = extractSlotIndexFromTarget(e.target);
+  if (slot === null) return;
+  if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) return;
+
+  assignSlot(slot, activeBrushVideoId);
+}
+
+function extractSlotIndexFromTarget(target) {
+  const btn = target.closest(".custom-slot");
+  if (!(btn instanceof HTMLButtonElement)) return null;
+  const slot = parseInt(btn.dataset.slotIndex || "", 10);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= SLOTS_PER_DAY) return null;
+  return slot;
+}
+
+function assignSlot(slotIndex, videoId) {
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SLOTS_PER_DAY) return;
+  const normalizedVideoId = FAN_BY_ID.has(videoId) ? videoId : null;
+
+  if (customAssignments[slotIndex] === normalizedVideoId) return;
+
+  customAssignments[slotIndex] = normalizedVideoId;
+  renderSlotCell(slotIndex);
+  updateCustomizeButtonState();
+  scheduleCustomPlaylistSync();
+}
+
+function resetCustomLayout() {
+  customAssignments = createEmptyAssignments();
+  renderAllSlotCells();
+  updateCustomizeButtonState();
+  scheduleCustomPlaylistSync({ immediate: true });
+  announce("Custom layout reset to default timeline.");
+}
+
+function scheduleCustomPlaylistSync({ immediate = false } = {}) {
+  if (customSyncTimer !== null) {
+    clearTimeout(customSyncTimer);
+    customSyncTimer = null;
+  }
+
+  const commit = () => {
+    customSyncTimer = null;
+    persistCustomAssignments(customAssignments);
+    setCustomPlaylist({ assignmentsBySlot: customAssignments });
+  };
+
+  if (immediate) {
+    commit();
+    return;
+  }
+
+  customSyncTimer = window.setTimeout(commit, CUSTOM_SYNC_DEBOUNCE_MS);
+}
+
+function renderAllSlotCells() {
+  for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
+    renderSlotCell(slot);
+  }
+}
+
+function renderSlotCell(slotIndex) {
+  const cell = slotCellEls[slotIndex];
+  if (!cell) return;
+
+  const assignedVideoId = customAssignments[slotIndex];
+  const fan = assignedVideoId ? FAN_BY_ID.get(assignedVideoId) : null;
+
+  cell.classList.remove("is-assigned", "is-short", "is-brush-match");
+
+  if (!fan) {
+    cell.removeAttribute("data-video-id");
+    cell.title = `${formatSlotLabel(slotIndex)} - original timeline`;
+    return;
+  }
+
+  cell.dataset.videoId = fan.videoId;
+  cell.classList.add("is-assigned");
+  if (fan.isShort) cell.classList.add("is-short");
+  if (activeBrushVideoId && fan.videoId === activeBrushVideoId) {
+    cell.classList.add("is-brush-match");
+  }
+
+  const cityPart = fan.city ? ` / ${fan.city}` : "";
+  const durationPart = Number.isFinite(fan.duration)
+    ? ` - ${formatDurationCompact(fan.duration)}`
+    : "";
+  const shortPart = fan.isShort ? " - short clip" : "";
+
+  cell.title = `${formatSlotLabel(slotIndex)} - ${fan.title} (${fan.country}${cityPart})${durationPart}${shortPart}`;
+}
+
+function setActiveBrush(videoId) {
+  const normalized = (videoId && FAN_BY_ID.has(videoId)) ? videoId : null;
+  if (normalized === activeBrushVideoId) return;
+
+  activeBrushVideoId = normalized;
+  renderSelectedBrushIndicator();
+  renderDesktopVideoList();
+  renderAllSlotCells();
+}
+
+function renderSelectedBrushIndicator() {
+  const label = document.getElementById("custom-brush-label");
+  const clearBtn = document.getElementById("custom-clear-brush");
+  if (!label || !clearBtn) return;
+
+  label.textContent = "";
+
+  if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) {
+    const hint = document.createElement("span");
+    hint.className = "custom-brush-empty";
+    hint.textContent = "No brush selected. Choose a fan video and paint slots.";
+    label.appendChild(hint);
+    clearBtn.disabled = true;
+    return;
+  }
+
+  const fan = FAN_BY_ID.get(activeBrushVideoId);
+
+  const prefix = document.createElement("span");
+  prefix.className = "custom-brush-prefix";
+  prefix.textContent = "Brush:";
+
+  const title = document.createElement("span");
+  title.className = "custom-brush-title";
+  title.textContent = fan.title;
+
+  label.appendChild(prefix);
+  label.appendChild(title);
+
+  if (Number.isFinite(fan.duration)) {
+    const duration = document.createElement("span");
+    duration.className = "custom-brush-duration";
+    duration.textContent = formatDurationCompact(fan.duration);
+    label.appendChild(duration);
+  }
+
+  const place = document.createElement("span");
+  place.className = "custom-brush-place";
+  place.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
+  label.appendChild(place);
+
+  clearBtn.disabled = false;
+}
+
+function renderDesktopFilters() {
+  const countrySelect = document.getElementById("custom-filter-country");
+  const citySelect = document.getElementById("custom-filter-city");
+  if (!countrySelect || !citySelect) return;
+
+  countrySelect.textContent = "";
+  countrySelect.appendChild(optionNode("", "All Countries"));
+  for (const country of FAN_COUNTRIES) {
+    countrySelect.appendChild(optionNode(country, country));
+  }
+
+  if (!FAN_COUNTRIES.includes(customFilters.country)) {
+    customFilters.country = "";
+  }
+  countrySelect.value = customFilters.country;
+
+  const cities = getCitiesForCountry(customFilters.country);
+  citySelect.textContent = "";
+  citySelect.appendChild(optionNode("", "All Cities"));
+  for (const city of cities) {
+    citySelect.appendChild(optionNode(city, city));
+  }
+
+  if (customFilters.city && !cities.includes(customFilters.city)) {
+    customFilters.city = "";
+  }
+  citySelect.value = customFilters.city;
+}
+
+function renderDesktopVideoList() {
+  const list = document.getElementById("custom-video-list");
+  if (!list) return;
+
+  list.textContent = "";
+
+  if (FAN_VIDEOS.length === 0) {
+    const msg = document.createElement("p");
+    msg.className = "custom-list-empty";
+    msg.textContent = "Fan video database unavailable.";
+    list.appendChild(msg);
+    return;
+  }
+
+  const filtered = getFilteredFanVideos(customFilters.country, customFilters.city);
+
+  if (filtered.length === 0) {
+    const msg = document.createElement("p");
+    msg.className = "custom-list-empty";
+    msg.textContent = "No videos for selected filters.";
+    list.appendChild(msg);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  for (const fan of filtered) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-video-option";
+    btn.dataset.videoId = fan.videoId;
+    if (activeBrushVideoId === fan.videoId) {
+      btn.classList.add("is-selected");
+    }
+
+    const top = document.createElement("div");
+    top.className = "custom-video-top";
+
+    const title = document.createElement("span");
+    title.className = "custom-video-title";
+    title.textContent = fan.title;
+    top.appendChild(title);
+
+    if (Number.isFinite(fan.duration)) {
+      const dur = document.createElement("span");
+      dur.className = "custom-video-duration";
+      dur.textContent = formatDurationCompact(fan.duration);
+      top.appendChild(dur);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "custom-video-meta";
+    meta.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
+
+    if (fan.isShort) {
+      const shortBadge = document.createElement("span");
+      shortBadge.className = "custom-video-short-badge";
+      shortBadge.textContent = "< 4:00 (fallback)";
+      meta.appendChild(shortBadge);
+    }
+
+    btn.appendChild(top);
+    btn.appendChild(meta);
+    fragment.appendChild(btn);
+  }
+
+  list.appendChild(fragment);
+}
+
+function optionNode(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+function getCitiesForCountry(country) {
+  const set = new Set();
+  for (const fan of FAN_VIDEOS) {
+    if (country && fan.country !== country) continue;
+    if (fan.city) set.add(fan.city);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function getFilteredFanVideos(country, city) {
+  return FAN_VIDEOS.filter((fan) => {
+    if (country && fan.country !== country) return false;
+    if (city && fan.city !== city) return false;
+    return true;
+  });
+}
+
+function countAssignedSlots() {
+  let count = 0;
+  for (const slot of customAssignments) {
+    if (slot) count += 1;
+  }
+  return count;
+}
+
+function createEmptyAssignments() {
+  return new Array(SLOTS_PER_DAY).fill(null);
+}
+
+function loadCustomAssignments(videoMap) {
+  const empty = createEmptyAssignments();
+  if (videoMap instanceof Map && videoMap.size === 0) return empty;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_CUSTOM_LAYOUT_KEY);
+    if (!raw) return empty;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return empty;
+
+    const next = createEmptyAssignments();
+    for (const [rawSlot, rawVideoId] of Object.entries(parsed)) {
+      const slot = parseInt(rawSlot, 10);
+      if (!Number.isInteger(slot) || slot < 0 || slot >= SLOTS_PER_DAY) continue;
+      if (typeof rawVideoId !== "string") continue;
+
+      const videoId = rawVideoId.trim();
+      if (!videoId) continue;
+      if (videoMap && videoMap.size > 0 && !videoMap.has(videoId)) continue;
+
+      next[slot] = videoId;
+    }
+
+    return next;
+  } catch (_) {
+    return empty;
+  }
+}
+
+function persistCustomAssignments(assignments) {
+  try {
+    const sparse = {};
+    for (let slot = 0; slot < assignments.length; slot++) {
+      const videoId = assignments[slot];
+      if (!videoId) continue;
+      sparse[slot] = videoId;
+    }
+    localStorage.setItem(STORAGE_CUSTOM_LAYOUT_KEY, JSON.stringify(sparse));
+  } catch (_) {
+    // Local storage unavailable.
+  }
+}
+
+function formatSlotLabel(slotIndex) {
+  const startMinute = slotIndex * SLOT_MINUTES;
+  const endMinute = startMinute + SLOT_MINUTES;
+  return `${formatTime(startMinute, TIME_FORMAT_24H)}-${formatTime(endMinute, TIME_FORMAT_24H)}`;
+}
+
+function formatDurationCompact(durationSeconds) {
+  const sec = Math.max(0, Math.floor(durationSeconds));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}' ${String(s).padStart(2, "0")}''`;
 }
 
 function loadTimeFormatMode() {
@@ -630,6 +1226,351 @@ function persistTimeFormatMode(mode) {
   } catch (_) {
     // Local storage unavailable.
   }
+}
+
+async function loadFanVideos() {
+  const res = await fetch("wearehappyfrom.com.json", { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`Failed to load wearehappyfrom.com.json: ${res.status}`);
+  }
+
+  const raw = await res.json();
+  if (!Array.isArray(raw)) {
+    throw new Error("Fan database must be a JSON array.");
+  }
+
+  const entries = [];
+  for (const item of raw) {
+    const normalized = normalizeFanVideo(item);
+    if (!normalized) continue;
+    entries.push(normalized);
+  }
+
+  entries.sort((a, b) => {
+    const byCountry = a.country.localeCompare(b.country);
+    if (byCountry !== 0) return byCountry;
+
+    const byCity = (a.city || "").localeCompare(b.city || "");
+    if (byCity !== 0) return byCity;
+
+    return a.title.localeCompare(b.title);
+  });
+
+  return entries;
+}
+
+function normalizeFanVideo(item) {
+  if (!item || typeof item !== "object") return null;
+
+  const videoId = normalizeVideoId(item.videoId) || extractVideoId(item.url);
+  if (!videoId) return null;
+
+  const title = normalizeText(item.title) || `Fan video ${videoId}`;
+  const country = normalizeText(item.country) || "--";
+  const city = normalizeText(item.city) || "";
+  const duration = normalizeDuration(item.duration);
+
+  return {
+    videoId,
+    url: normalizeText(item.url) || `https://www.youtube.com/watch?v=${videoId}`,
+    title,
+    country,
+    city,
+    duration,
+    isShort: Number.isFinite(duration) && duration < SLOT_SECONDS,
+  };
+}
+
+function normalizeDuration(raw) {
+  if (Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    if (/^\d+$/.test(trimmed)) {
+      return Math.max(0, parseInt(trimmed, 10));
+    }
+
+    const mmss = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
+    if (mmss) {
+      const m = parseInt(mmss[1], 10);
+      const s = parseInt(mmss[2], 10);
+      return (m * 60) + s;
+    }
+  }
+
+  return null;
+}
+
+function normalizeText(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
+function normalizeVideoId(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed;
+}
+
+function extractVideoId(url) {
+  if (typeof url !== "string") return "";
+
+  const watchMatch = /[?&]v=([A-Za-z0-9_-]{11})/.exec(url);
+  if (watchMatch) return watchMatch[1];
+
+  const shortMatch = /youtu\.be\/([A-Za-z0-9_-]{11})/.exec(url);
+  if (shortMatch) return shortMatch[1];
+
+  return "";
+}
+
+function isMobilePickerViewport() {
+  return window.matchMedia(`(max-width: ${MOBILE_PICKER_BREAKPOINT}px)`).matches;
+}
+
+function openMobilePicker(slotIndex) {
+  if (!isMobilePickerViewport()) return;
+
+  mobilePickerState = {
+    open: true,
+    slotIndex,
+    step: "country",
+    country: "",
+    city: "",
+  };
+  renderMobilePicker();
+}
+
+function closeMobilePicker() {
+  mobilePickerState = {
+    open: false,
+    slotIndex: null,
+    step: "country",
+    country: "",
+    city: "",
+  };
+  renderMobilePicker();
+}
+
+function renderMobilePicker() {
+  const panel = document.getElementById("custom-mobile-picker");
+  if (!panel) return;
+
+  if (!customizerOpen || !isMobilePickerViewport() || !mobilePickerState.open) {
+    panel.hidden = true;
+    panel.textContent = "";
+    return;
+  }
+
+  panel.hidden = false;
+  panel.textContent = "";
+
+  const head = document.createElement("div");
+  head.className = "custom-mobile-head";
+
+  const title = document.createElement("div");
+  title.className = "custom-mobile-title";
+  title.textContent = `Pick for ${formatSlotLabel(mobilePickerState.slotIndex)}`;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "custom-mobile-close";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", closeMobilePicker);
+
+  head.appendChild(title);
+  head.appendChild(closeBtn);
+  panel.appendChild(head);
+
+  if (mobilePickerState.step !== "country") {
+    const backBtn = document.createElement("button");
+    backBtn.type = "button";
+    backBtn.className = "custom-mobile-back";
+    backBtn.textContent = "Back";
+    backBtn.addEventListener("click", onMobilePickerBack);
+    panel.appendChild(backBtn);
+  }
+
+  if (mobilePickerState.step === "country") {
+    renderMobileCountryStep(panel);
+  } else if (mobilePickerState.step === "city") {
+    renderMobileCityStep(panel);
+  } else {
+    renderMobileVideoStep(panel);
+  }
+}
+
+function onMobilePickerBack() {
+  if (mobilePickerState.step === "video") {
+    const cities = getCitiesForCountry(mobilePickerState.country);
+    mobilePickerState.step = cities.length > 1 ? "city" : "country";
+    renderMobilePicker();
+    return;
+  }
+
+  if (mobilePickerState.step === "city") {
+    mobilePickerState.step = "country";
+    renderMobilePicker();
+  }
+}
+
+function renderMobileCountryStep(panel) {
+  const info = document.createElement("p");
+  info.className = "custom-mobile-info";
+  info.textContent = "Choose a country";
+  panel.appendChild(info);
+
+  const pills = document.createElement("div");
+  pills.className = "custom-mobile-pills";
+
+  for (const country of FAN_COUNTRIES) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-pill";
+    btn.textContent = country;
+    btn.addEventListener("click", () => {
+      chooseMobileCountry(country);
+    });
+    pills.appendChild(btn);
+  }
+
+  panel.appendChild(pills);
+}
+
+function chooseMobileCountry(country) {
+  mobilePickerState.country = country;
+  mobilePickerState.city = "";
+
+  const cities = getCitiesForCountry(country);
+  if (cities.length <= 1) {
+    mobilePickerState.city = cities[0] || "";
+
+    const videos = getFilteredFanVideos(country, mobilePickerState.city);
+    if (videos.length === 1) {
+      applyMobileVideoChoice(videos[0]);
+      return;
+    }
+
+    mobilePickerState.step = "video";
+    renderMobilePicker();
+    return;
+  }
+
+  mobilePickerState.step = "city";
+  renderMobilePicker();
+}
+
+function renderMobileCityStep(panel) {
+  const info = document.createElement("p");
+  info.className = "custom-mobile-info";
+  info.textContent = `Choose city in ${mobilePickerState.country}`;
+  panel.appendChild(info);
+
+  const pills = document.createElement("div");
+  pills.className = "custom-mobile-pills";
+
+  const cities = getCitiesForCountry(mobilePickerState.country);
+  for (const city of cities) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-pill";
+    btn.textContent = city;
+    btn.addEventListener("click", () => {
+      chooseMobileCity(city);
+    });
+    pills.appendChild(btn);
+  }
+
+  panel.appendChild(pills);
+}
+
+function chooseMobileCity(city) {
+  mobilePickerState.city = city;
+
+  const videos = getFilteredFanVideos(mobilePickerState.country, city);
+  if (videos.length === 1) {
+    applyMobileVideoChoice(videos[0]);
+    return;
+  }
+
+  mobilePickerState.step = "video";
+  renderMobilePicker();
+}
+
+function renderMobileVideoStep(panel) {
+  const info = document.createElement("p");
+  info.className = "custom-mobile-info";
+  info.textContent = "Choose video";
+  panel.appendChild(info);
+
+  const list = document.createElement("div");
+  list.className = "custom-mobile-video-list";
+
+  const videos = getFilteredFanVideos(mobilePickerState.country, mobilePickerState.city);
+  for (const fan of videos) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-mobile-video-option";
+
+    const top = document.createElement("div");
+    top.className = "custom-mobile-video-top";
+
+    const title = document.createElement("span");
+    title.className = "custom-mobile-video-title";
+    title.textContent = fan.title;
+    top.appendChild(title);
+
+    if (Number.isFinite(fan.duration)) {
+      const dur = document.createElement("span");
+      dur.className = "custom-mobile-video-duration";
+      dur.textContent = formatDurationCompact(fan.duration);
+      top.appendChild(dur);
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "custom-mobile-video-meta";
+    meta.textContent = `${fan.country}${fan.city ? ` / ${fan.city}` : ""}`;
+
+    if (fan.isShort) {
+      const badge = document.createElement("span");
+      badge.className = "custom-video-short-badge";
+      badge.textContent = "< 4:00 (fallback)";
+      meta.appendChild(badge);
+    }
+
+    btn.appendChild(top);
+    btn.appendChild(meta);
+    btn.addEventListener("click", () => {
+      applyMobileVideoChoice(fan);
+    });
+
+    list.appendChild(btn);
+  }
+
+  if (videos.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "custom-list-empty";
+    empty.textContent = "No videos for this selection.";
+    panel.appendChild(empty);
+  } else {
+    panel.appendChild(list);
+  }
+}
+
+function applyMobileVideoChoice(fan) {
+  if (!fan || !FAN_BY_ID.has(fan.videoId)) return;
+
+  setActiveBrush(fan.videoId);
+
+  if (Number.isInteger(mobilePickerState.slotIndex)) {
+    assignSlot(mobilePickerState.slotIndex, fan.videoId);
+  }
+
+  closeMobilePicker();
+  announce(`Selected ${fan.title} as paint brush.`);
 }
 
 function wirePwaInstall() {

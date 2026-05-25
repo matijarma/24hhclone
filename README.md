@@ -13,6 +13,7 @@ https://24hh.matijar.info
 - Persistent `24h` / `AM/PM` readout preference
 - Fullscreen `Clock Widget` mode (analog + digital 12-hour clock)
 - PWA install support with conditional in-app `Install` button
+- Fan video customizer (`24 x 15` slot painter with local persistence + original fallback)
 
 ## Run Locally
 
@@ -43,6 +44,7 @@ http://localhost:8765/
 - `Now` button: resync to current local time
 - `Mute` / `Unmute` button: toggle audio
 - `24h` / `AM/PM` button: switch readout format (saved in localStorage)
+- `Customize` button: open 24-hour slot editor, pick fan videos by country/city, and paint slots
 - `Install` button: shown only when PWA install is available and app is not already installed
 - `Clock Widget` button: enter fullscreen clock mode
 

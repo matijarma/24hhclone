@@ -67,6 +67,7 @@
         <button id="now" class="ctrl" aria-label="Resync to current time">Now</button>
         <button id="toggle-overlay" class="ctrl" aria-label="Hide overlay" aria-pressed="false">Hide</button>
         <button id="format-toggle" class="ctrl ctrl-compact" aria-label="Switch to 12-hour time" aria-pressed="false">24h</button>
+        <button id="customize-playlist" class="ctrl" aria-label="Customize fan playlist">Customize</button>
         <button id="install-app" class="ctrl ctrl-compact" aria-label="Install app" hidden>Install</button>
         <button id="clock-widget" class="ctrl" aria-label="Open clock widget mode">Clock Widget</button>
       </div>
@@ -74,6 +75,47 @@
       <p id="announcer" class="sr-only" aria-live="polite"></p>
     </div>
   </main>
+
+  <div class="customize-modal" id="customize-modal" hidden>
+    <div class="customize-dialog" role="dialog" aria-modal="true" aria-labelledby="customize-title">
+      <div class="customize-head">
+        <h2 id="customize-title">Customize Playlist</h2>
+        <button id="customize-close" class="ctrl ctrl-compact" aria-label="Close customizer">Close</button>
+      </div>
+
+      <div class="customize-selected">
+        <div id="custom-brush-label" class="custom-brush-label"></div>
+        <button id="custom-clear-brush" class="ctrl ctrl-compact" aria-label="Clear selected brush">Clear</button>
+      </div>
+
+      <div class="customize-body">
+        <section class="customize-grid-wrap" aria-label="Slot grid">
+          <div class="customize-grid" id="customize-grid"></div>
+        </section>
+
+        <aside class="customize-picker" aria-label="Fan video picker">
+          <div class="custom-filter-row">
+            <label class="custom-filter">
+              <span>Country</span>
+              <select id="custom-filter-country"></select>
+            </label>
+            <label class="custom-filter">
+              <span>City</span>
+              <select id="custom-filter-city"></select>
+            </label>
+          </div>
+          <div class="custom-video-list" id="custom-video-list"></div>
+        </aside>
+      </div>
+
+      <div class="customize-foot">
+        <button id="custom-reset" class="ctrl" aria-label="Reset custom layout">Reset Layout</button>
+        <button id="customize-done" class="ctrl" aria-label="Close customizer">Done</button>
+      </div>
+
+      <div class="custom-mobile-picker" id="custom-mobile-picker" hidden></div>
+    </div>
+  </div>
 
   <footer>
     <p>"Happy" &copy; Pharrell Williams &amp; Back Lot Music. Videos embedded via YouTube. Unofficial recreation of the original <a href="https://24hoursofhappy.com/" target="_blank" rel="noopener noreferrer">24hoursofhappy.com</a> experience. <a href="https://github.com/matijarma/24hhclone" target="_blank" rel="noopener noreferrer">coded by matijarma</a>.</p>
