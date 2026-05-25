@@ -13,9 +13,22 @@ export function splitHM(minuteOfDay) {
   return { hour: Math.floor(m / 60), minute: m % 60 };
 }
 
-export function formatTime(minuteOfDay) {
+export function formatTime24h(minuteOfDay) {
   const { hour, minute } = splitHM(minuteOfDay);
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+export function formatTime12h(minuteOfDay) {
+  const { hour, minute } = splitHM(minuteOfDay);
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  const h12 = (hour % 12) || 12;
+  return `${h12}:${String(minute).padStart(2, "0")} ${meridiem}`;
+}
+
+export function formatTime(minuteOfDay, mode = "24h") {
+  return mode === "ampm"
+    ? formatTime12h(minuteOfDay)
+    : formatTime24h(minuteOfDay);
 }
 
 export function hourLabel(hour) {

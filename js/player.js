@@ -129,6 +129,11 @@ export async function unmute() {
   ytPlayer.unMute();
 }
 
+export async function mute() {
+  await readyPromise;
+  ytPlayer.mute();
+}
+
 export async function isMuted() {
   await readyPromise;
   return ytPlayer.isMuted();

@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>24 Hours of Happy</title>
   <meta name="description" content="Pharrell Williams' Happy, one hour at a time, synced to your local clock.">
+  <meta name="theme-color" content="#0E0E10">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -39,14 +43,31 @@
         <div class="readout-sub" id="readout-sub">now playing</div>
       </div>
 
+      <div class="clock-widget-overlay" id="clock-widget-overlay" aria-hidden="true">
+        <div class="clock-widget-face" aria-hidden="true">
+          <span class="clock-mark mark-12">12</span>
+          <span class="clock-mark mark-3">3</span>
+          <span class="clock-mark mark-6">6</span>
+          <span class="clock-mark mark-9">9</span>
+          <div class="clock-hand hour" id="clock-hour-hand"></div>
+          <div class="clock-hand minute" id="clock-minute-hand"></div>
+          <div class="clock-center-dot"></div>
+        </div>
+        <div class="clock-widget-time" id="clock-widget-time">--:-- --</div>
+        <div class="clock-widget-hint">Tap to mute/unmute - double-tap to exit</div>
+      </div>
+
       <div class="controls">
         <button id="playpause" class="ctrl" aria-label="Play or pause">
           <span class="ico-play" aria-hidden="true">&#9654;</span>
           <span class="ico-pause" aria-hidden="true">&#10074;&#10074;</span>
         </button>
+        <button id="mute-toggle" class="ctrl ctrl-unmute" aria-label="Unmute video" aria-pressed="true">Unmute</button>
         <button id="now" class="ctrl" aria-label="Resync to current time">Now</button>
         <button id="toggle-overlay" class="ctrl" aria-label="Hide overlay" aria-pressed="false">Hide</button>
-        <button id="unmute" class="ctrl ctrl-unmute" aria-label="Unmute" hidden>Unmute</button>
+        <button id="format-toggle" class="ctrl ctrl-compact" aria-label="Switch to 12-hour time" aria-pressed="false">24h</button>
+        <button id="install-app" class="ctrl ctrl-compact" aria-label="Install app" hidden>Install</button>
+        <button id="clock-widget" class="ctrl" aria-label="Open clock widget mode">Clock Widget</button>
       </div>
 
       <p id="announcer" class="sr-only" aria-live="polite"></p>
@@ -54,7 +75,7 @@
   </main>
 
   <footer>
-    <p>"Happy" &copy; Pharrell Williams &amp; Back Lot Music. Videos embedded via YouTube. Unofficial recreation of the original 24hoursofhappy.com experience.</p>
+    <p>"Happy" &copy; Pharrell Williams &amp; Back Lot Music. Videos embedded via YouTube. Unofficial recreation of the original 24hoursofhappy.com experience. <a href="https://github.com/matijarma/24hhclone" target="_blank" rel="noopener noreferrer">coded by matijarma</a>.</p>
   </footer>
 
   <script type="module" src="js/main.js"></script>

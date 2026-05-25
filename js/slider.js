@@ -26,11 +26,15 @@ let onChangeCb = null;
 let minuteOfDay = 0;
 let dragging = false;
 let scrubThrottleAt = 0;
+let interactive = true;
+let baseTabIndex = "0";
 const SCRUB_HZ_MS = 160; // ~6 Hz
 
 export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {}) {
   svgEl = svg;
   onChangeCb = onChange;
+  baseTabIndex = svg.getAttribute("tabindex") || "0";
+  interactive = true;
 
   // Build SVG content.
   // Pointer hit-ring (transparent, generous grab zone along the track).
@@ -93,6 +97,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
 
   // Pointer events.
   const startDrag = (e) => {
+    if (!interactive) return;
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     dragging = true;
@@ -101,6 +106,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
     handlePointer(e, /*committed*/ false);
   };
   const moveDrag = (e) => {
+    if (!interactive) return;
     if (!dragging) return;
     e.preventDefault();
     const now = performance.now();
@@ -109,6 +115,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
     if (force) scrubThrottleAt = now;
   };
   const endDrag = (e) => {
+    if (!interactive) return;
     if (!dragging) return;
     dragging = false;
     svg.classList.remove("dragging");
@@ -124,6 +131,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
 
   // Keyboard.
   svg.addEventListener("keydown", (e) => {
+    if (!interactive) return;
     let delta = 0;
     let absolute = null;
     switch (e.key) {
@@ -161,6 +169,7 @@ export function initSlider(svg, { initialMinute = 0, onChange = () => {} } = {})
   return {
     setMinuteOfDay,
     getMinuteOfDay: () => minuteOfDay,
+    setInteractive,
   };
 }
 
@@ -188,6 +197,21 @@ export function setMinuteOfDay(min) {
   if (svgEl) {
     svgEl.setAttribute("aria-valuenow", String(minuteOfDay));
     svgEl.setAttribute("aria-valuetext", formatTime(minuteOfDay));
+  }
+}
+
+export function setInteractive(enabled) {
+  interactive = Boolean(enabled);
+  if (!svgEl) return;
+  svgEl.classList.toggle("is-disabled", !interactive);
+  if (interactive) {
+    svgEl.setAttribute("tabindex", baseTabIndex);
+    svgEl.removeAttribute("aria-disabled");
+  } else {
+    svgEl.classList.remove("dragging");
+    dragging = false;
+    svgEl.setAttribute("tabindex", "-1");
+    svgEl.setAttribute("aria-disabled", "true");
   }
 }
 
