@@ -89,21 +89,25 @@
       </div>
 
       <div class="customize-body">
+        <div class="custom-mobile-picker" id="custom-mobile-picker" hidden></div>
+
         <section class="customize-grid-wrap" aria-label="Slot grid">
           <div class="customize-grid" id="customize-grid"></div>
         </section>
 
         <aside class="customize-picker" aria-label="Fan video picker">
-          <div class="custom-filter-row">
-            <label class="custom-filter">
-              <span>Country</span>
-              <select id="custom-filter-country"></select>
-            </label>
-            <label class="custom-filter">
-              <span>City</span>
-              <select id="custom-filter-city"></select>
-            </label>
+          <div class="custom-picker-head">
+            <button id="custom-desktop-back" class="ctrl ctrl-compact" aria-label="Go back" hidden>Back</button>
+            <div class="custom-picker-step">
+              <p class="custom-picker-stage" id="custom-desktop-stage">Select country</p>
+              <p class="custom-picker-path" id="custom-desktop-path">Step 1 of 3</p>
+            </div>
           </div>
+          <label class="custom-picker-search-wrap" for="custom-picker-search">
+            <span class="custom-picker-search-label">Search</span>
+            <input id="custom-picker-search" class="custom-picker-search" type="search" autocomplete="off" placeholder="Search countries">
+          </label>
+          <div class="custom-desktop-picker" id="custom-desktop-picker"></div>
           <div class="custom-video-list" id="custom-video-list"></div>
         </aside>
       </div>
@@ -112,8 +116,6 @@
         <button id="custom-reset" class="ctrl" aria-label="Reset custom layout">Reset Layout</button>
         <button id="customize-done" class="ctrl" aria-label="Close customizer">Done</button>
       </div>
-
-      <div class="custom-mobile-picker" id="custom-mobile-picker" hidden></div>
     </div>
   </div>
 

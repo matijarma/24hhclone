@@ -58,9 +58,11 @@ let FAN_BY_ID = new Map();
 let FAN_COUNTRIES = [];
 
 let customAssignments = createEmptyAssignments();
-let customFilters = {
+let desktopPickerState = {
+  step: "country",
   country: "",
   city: "",
+  search: "",
 };
 let activeBrushVideoId = null;
 let slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
@@ -686,34 +688,29 @@ function initCustomizerUi() {
   const modal = document.getElementById("customize-modal");
   const grid = document.getElementById("customize-grid");
   const list = document.getElementById("custom-video-list");
-  const countrySelect = document.getElementById("custom-filter-country");
-  const citySelect = document.getElementById("custom-filter-city");
+  const desktopPickerRoot = document.getElementById("custom-desktop-picker");
+  const desktopBackBtn = document.getElementById("custom-desktop-back");
+  const desktopSearchInput = document.getElementById("custom-picker-search");
   const closeTopBtn = document.getElementById("customize-close");
   const closeBottomBtn = document.getElementById("customize-done");
   const resetBtn = document.getElementById("custom-reset");
   const clearBrushBtn = document.getElementById("custom-clear-brush");
 
-  if (!modal || !grid || !list || !countrySelect || !citySelect) {
+  if (!modal || !grid || !list || !desktopPickerRoot || !desktopBackBtn || !desktopSearchInput) {
     return;
   }
 
   buildCustomizerGrid(grid);
-  renderDesktopFilters();
-  renderDesktopVideoList();
+  resetDesktopPickerState({ render: false });
+  renderDesktopPicker();
   renderSelectedBrushIndicator();
   renderAllSlotCells();
   renderMobilePicker();
 
-  countrySelect.addEventListener("change", () => {
-    customFilters.country = countrySelect.value;
-    customFilters.city = "";
-    renderDesktopFilters();
-    renderDesktopVideoList();
-  });
-
-  citySelect.addEventListener("change", () => {
-    customFilters.city = citySelect.value;
-    renderDesktopVideoList();
+  desktopBackBtn.addEventListener("click", onDesktopPickerBack);
+  desktopSearchInput.addEventListener("input", () => {
+    desktopPickerState.search = desktopSearchInput.value.trim();
+    renderDesktopPicker();
   });
 
   list.addEventListener("click", (e) => {
@@ -729,6 +726,7 @@ function initCustomizerUi() {
 
   grid.addEventListener("pointerdown", onGridPointerDown);
   grid.addEventListener("pointerover", onGridPointerOver);
+  grid.addEventListener("click", onGridClickFallback);
   window.addEventListener("pointerup", () => {
     paintDragging = false;
   });
@@ -747,6 +745,7 @@ function initCustomizerUi() {
   });
 
   window.addEventListener("resize", () => {
+    renderDesktopPicker();
     renderMobilePicker();
   });
 
@@ -768,8 +767,8 @@ function openCustomizerModal() {
   modal.hidden = false;
   document.body.classList.add("customize-open");
 
-  renderDesktopFilters();
-  renderDesktopVideoList();
+  resetDesktopPickerState({ render: false });
+  renderDesktopPicker();
   renderSelectedBrushIndicator();
   renderAllSlotCells();
   renderMobilePicker();
@@ -851,6 +850,13 @@ function onGridPointerDown(e) {
   const slot = extractSlotIndexFromTarget(e.target);
   if (slot === null) return;
 
+  if (isMobilePickerViewport()) {
+    paintDragging = false;
+    openMobilePicker(slot);
+    e.preventDefault();
+    return;
+  }
+
   if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
     paintDragging = true;
     assignSlot(slot, activeBrushVideoId);
@@ -858,13 +864,20 @@ function onGridPointerDown(e) {
     return;
   }
 
-  if (isMobilePickerViewport()) {
-    openMobilePicker(slot);
-    e.preventDefault();
+  announce("Choose a fan video first, then paint slots.");
+}
+
+function onGridClickFallback(e) {
+  if (!isMobilePickerViewport()) return;
+  if (!(e.target instanceof Element)) return;
+  const slot = extractSlotIndexFromTarget(e.target);
+  if (slot === null) return;
+
+  if (mobilePickerState.open && mobilePickerState.slotIndex === slot) {
     return;
   }
 
-  announce("Choose a fan video first, then paint slots.");
+  openMobilePicker(slot);
 }
 
 function onGridPointerOver(e) {
@@ -969,7 +982,7 @@ function setActiveBrush(videoId) {
 
   activeBrushVideoId = normalized;
   renderSelectedBrushIndicator();
-  renderDesktopVideoList();
+  renderDesktopPicker();
   renderAllSlotCells();
 }
 
@@ -1017,62 +1030,231 @@ function renderSelectedBrushIndicator() {
   clearBtn.disabled = false;
 }
 
-function renderDesktopFilters() {
-  const countrySelect = document.getElementById("custom-filter-country");
-  const citySelect = document.getElementById("custom-filter-city");
-  if (!countrySelect || !citySelect) return;
-
-  countrySelect.textContent = "";
-  countrySelect.appendChild(optionNode("", "All Countries"));
-  for (const country of FAN_COUNTRIES) {
-    countrySelect.appendChild(optionNode(country, country));
-  }
-
-  if (!FAN_COUNTRIES.includes(customFilters.country)) {
-    customFilters.country = "";
-  }
-  countrySelect.value = customFilters.country;
-
-  const cities = getCitiesForCountry(customFilters.country);
-  citySelect.textContent = "";
-  citySelect.appendChild(optionNode("", "All Cities"));
-  for (const city of cities) {
-    citySelect.appendChild(optionNode(city, city));
-  }
-
-  if (customFilters.city && !cities.includes(customFilters.city)) {
-    customFilters.city = "";
-  }
-  citySelect.value = customFilters.city;
+function resetDesktopPickerState({ render = true } = {}) {
+  desktopPickerState = {
+    step: "country",
+    country: "",
+    city: "",
+    search: "",
+  };
+  if (render) renderDesktopPicker();
 }
 
-function renderDesktopVideoList() {
+function renderDesktopPicker() {
+  const root = document.getElementById("custom-desktop-picker");
   const list = document.getElementById("custom-video-list");
-  if (!list) return;
+  const stageEl = document.getElementById("custom-desktop-stage");
+  const pathEl = document.getElementById("custom-desktop-path");
+  const backBtn = document.getElementById("custom-desktop-back");
+  const searchInput = document.getElementById("custom-picker-search");
+  if (!root || !list || !stageEl || !pathEl || !backBtn || !searchInput) return;
 
+  if (desktopPickerState.step === "country") {
+    stageEl.textContent = "Select country";
+    pathEl.textContent = "Step 1 of 3";
+    backBtn.hidden = true;
+    searchInput.placeholder = "Search countries";
+  } else if (desktopPickerState.step === "city") {
+    stageEl.textContent = "Select city";
+    pathEl.textContent = desktopPickerState.country || "Step 2 of 3";
+    backBtn.hidden = false;
+    searchInput.placeholder = "Search cities";
+  } else {
+    stageEl.textContent = "Select video";
+    pathEl.textContent = [desktopPickerState.country, desktopPickerState.city]
+      .filter(Boolean)
+      .join(" / ");
+    backBtn.hidden = false;
+    searchInput.placeholder = "Search videos";
+  }
+
+  if (searchInput.value !== desktopPickerState.search) {
+    searchInput.value = desktopPickerState.search;
+  }
+
+  root.textContent = "";
+  list.hidden = desktopPickerState.step !== "video";
+  if (list.hidden) list.textContent = "";
+
+  if (desktopPickerState.step === "country") {
+    renderDesktopCountryStep(root);
+  } else if (desktopPickerState.step === "city") {
+    renderDesktopCityStep(root);
+  } else {
+    renderDesktopVideoStep(root, list);
+  }
+}
+
+function onDesktopPickerBack() {
+  if (desktopPickerState.step === "video") {
+    const cities = getCitiesForCountry(desktopPickerState.country);
+    desktopPickerState.step = cities.length > 1 ? "city" : "country";
+  } else if (desktopPickerState.step === "city") {
+    desktopPickerState.step = "country";
+  } else {
+    return;
+  }
+
+  desktopPickerState.search = "";
+  renderDesktopPicker();
+}
+
+function renderDesktopCountryStep(root) {
+  const query = desktopPickerState.search.toLowerCase();
+  const countries = FAN_COUNTRIES.filter((country) => (
+    !query || country.toLowerCase().includes(query)
+  ));
+
+  const info = document.createElement("p");
+  info.className = "custom-picker-info";
+  info.textContent = "Pick a country to continue.";
+  root.appendChild(info);
+
+  if (countries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "custom-list-empty";
+    empty.textContent = "No countries match your search.";
+    root.appendChild(empty);
+    return;
+  }
+
+  const wall = document.createElement("div");
+  wall.className = "custom-chip-wall";
+  for (const country of countries) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-pill";
+    btn.textContent = country;
+    btn.addEventListener("click", () => {
+      selectDesktopCountry(country);
+    });
+    wall.appendChild(btn);
+  }
+  root.appendChild(wall);
+}
+
+function selectDesktopCountry(country) {
+  desktopPickerState.country = country;
+  desktopPickerState.city = "";
+  desktopPickerState.search = "";
+
+  const cities = getCitiesForCountry(country);
+  if (cities.length <= 1) {
+    desktopPickerState.city = cities[0] || "";
+    const videos = getFilteredFanVideos(country, desktopPickerState.city);
+    if (videos.length === 1) {
+      setActiveBrush(videos[0].videoId);
+      announce(`Brush set to ${videos[0].title}.`);
+      desktopPickerState.step = "country";
+      desktopPickerState.country = "";
+      desktopPickerState.city = "";
+      desktopPickerState.search = "";
+      renderDesktopPicker();
+      return;
+    }
+    desktopPickerState.step = "video";
+    renderDesktopPicker();
+    return;
+  }
+
+  desktopPickerState.step = "city";
+  renderDesktopPicker();
+}
+
+function renderDesktopCityStep(root) {
+  const query = desktopPickerState.search.toLowerCase();
+  const cities = getCitiesForCountry(desktopPickerState.country).filter((city) => (
+    !query || city.toLowerCase().includes(query)
+  ));
+
+  const info = document.createElement("p");
+  info.className = "custom-picker-info";
+  info.textContent = `Choose city in ${desktopPickerState.country}.`;
+  root.appendChild(info);
+
+  if (cities.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "custom-list-empty";
+    empty.textContent = "No cities match your search.";
+    root.appendChild(empty);
+    return;
+  }
+
+  const wall = document.createElement("div");
+  wall.className = "custom-chip-wall";
+  for (const city of cities) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "custom-pill";
+    btn.textContent = city;
+    btn.addEventListener("click", () => {
+      selectDesktopCity(city);
+    });
+    wall.appendChild(btn);
+  }
+  root.appendChild(wall);
+}
+
+function selectDesktopCity(city) {
+  desktopPickerState.city = city;
+  desktopPickerState.search = "";
+
+  const videos = getFilteredFanVideos(desktopPickerState.country, city);
+  if (videos.length === 1) {
+    setActiveBrush(videos[0].videoId);
+    announce(`Brush set to ${videos[0].title}.`);
+    desktopPickerState.step = "country";
+    desktopPickerState.country = "";
+    desktopPickerState.city = "";
+    desktopPickerState.search = "";
+    renderDesktopPicker();
+    return;
+  }
+
+  desktopPickerState.step = "video";
+  renderDesktopPicker();
+}
+
+function renderDesktopVideoStep(root, list) {
+  const info = document.createElement("p");
+  info.className = "custom-picker-info";
+  info.textContent = "Pick a video for painting slots.";
+  root.appendChild(info);
+
+  const query = desktopPickerState.search.toLowerCase();
+  const videos = getFilteredFanVideos(desktopPickerState.country, desktopPickerState.city)
+    .filter((fan) => (
+      !query
+      || fan.title.toLowerCase().includes(query)
+      || fan.city.toLowerCase().includes(query)
+      || fan.country.toLowerCase().includes(query)
+    ));
+
+  renderDesktopVideoList(root, list, videos);
+}
+
+function renderDesktopVideoList(root, list, videos) {
+  if (!list || !root) return;
   list.textContent = "";
 
   if (FAN_VIDEOS.length === 0) {
     const msg = document.createElement("p");
     msg.className = "custom-list-empty";
     msg.textContent = "Fan video database unavailable.";
-    list.appendChild(msg);
+    root.appendChild(msg);
     return;
   }
 
-  const filtered = getFilteredFanVideos(customFilters.country, customFilters.city);
-
-  if (filtered.length === 0) {
+  if (videos.length === 0) {
     const msg = document.createElement("p");
     msg.className = "custom-list-empty";
-    msg.textContent = "No videos for selected filters.";
-    list.appendChild(msg);
+    msg.textContent = "No videos match your search.";
+    root.appendChild(msg);
     return;
   }
-
   const fragment = document.createDocumentFragment();
 
-  for (const fan of filtered) {
+  for (const fan of videos) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "custom-video-option";
@@ -1113,13 +1295,6 @@ function renderDesktopVideoList() {
   }
 
   list.appendChild(fragment);
-}
-
-function optionNode(value, label) {
-  const option = document.createElement("option");
-  option.value = value;
-  option.textContent = label;
-  return option;
 }
 
 function getCitiesForCountry(country) {
@@ -1205,7 +1380,7 @@ function formatDurationCompact(durationSeconds) {
   const sec = Math.max(0, Math.floor(durationSeconds));
   const m = Math.floor(sec / 60);
   const s = sec % 60;
-  return `${m}' ${String(s).padStart(2, "0")}''`;
+  return `${m}' ${String(s).padStart(2, "0")}"`;
 }
 
 function loadTimeFormatMode() {
