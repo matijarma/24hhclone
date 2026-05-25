@@ -228,7 +228,9 @@ function resolvePlaybackAtSecond(absSec) {
         videoId: assignedVideoId,
         hour,
         slotIndex,
-        videoStartSec: 0,
+        // Seeking inside a slot must continue within the fan clip at the same
+        // slot offset so circle scrubs map correctly.
+        videoStartSec: slotOffset,
         segmentEndAbsSec: slotStart + Math.min(SLOT_SECONDS, fanDuration),
       };
     }

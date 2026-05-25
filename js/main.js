@@ -316,6 +316,7 @@ function setOverlayHidden(hidden) {
   const nextHidden = Boolean(hidden);
   document.body.classList.toggle("overlay-hidden", nextHidden);
   updateOverlayToggleButton(nextHidden);
+  syncSliderInteractivity();
   announce(nextHidden ? "Overlay hidden." : "Overlay shown.");
 }
 
@@ -471,7 +472,7 @@ async function enterClockWidgetMode() {
   clockWidgetMode = true;
   ignoreClockTapUntil = performance.now() + 350;
   document.body.classList.add("clock-mode");
-  sliderSetInteractive(false);
+  syncSliderInteractivity();
   attachClockWidgetInput();
   updateClockWidgetOverlay();
 
@@ -492,7 +493,7 @@ async function exitClockWidgetMode({ fromFullscreenChange = false } = {}) {
 
   clockWidgetMode = false;
   document.body.classList.remove("clock-mode");
-  sliderSetInteractive(true);
+  syncSliderInteractivity();
   detachClockWidgetInput();
   clearClockTapTimer();
   clockTapLastAt = 0;
@@ -766,6 +767,7 @@ function openCustomizerModal() {
   customizerOpen = true;
   modal.hidden = false;
   document.body.classList.add("customize-open");
+  syncSliderInteractivity();
 
   resetDesktopPickerState({ render: false });
   renderDesktopPicker();
@@ -788,6 +790,12 @@ function closeCustomizerModal() {
   closeMobilePicker();
   modal.hidden = true;
   document.body.classList.remove("customize-open");
+  syncSliderInteractivity();
+}
+
+function syncSliderInteractivity() {
+  const interactive = !clockWidgetMode && !customizerOpen && !isOverlayHidden();
+  sliderSetInteractive(interactive);
 }
 
 function updateCustomizeButtonState() {
