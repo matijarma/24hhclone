@@ -270,45 +270,10 @@ body.overlay-hidden #toggle-overlay {
   pointer-events: none;
   transition: opacity 0.28s var(--ease), visibility 0.28s var(--ease);
 }
-.clock-widget-face {
+.clock-widget-hands {
   position: relative;
-  width: min(76vmin, 560px);
+  width: min(58vmin, 500px);
   aspect-ratio: 1;
-  border-radius: 50%;
-  border: 3px solid rgba(252, 212, 46, 0.9);
-  background: radial-gradient(circle at 50% 45%, rgba(18, 18, 20, 0.62), rgba(8, 8, 10, 0.86));
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 18px 44px rgba(0, 0, 0, 0.45),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-.clock-mark {
-  position: absolute;
-  color: var(--yellow);
-  font-size: clamp(1.1rem, 3.6vmin, 2rem);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
-}
-.clock-mark.mark-12 {
-  top: 7%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.clock-mark.mark-3 {
-  right: 8%;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.clock-mark.mark-6 {
-  bottom: 7%;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.clock-mark.mark-9 {
-  left: 8%;
-  top: 50%;
-  transform: translateY(-50%);
 }
 .clock-hand {
   position: absolute;
@@ -322,12 +287,12 @@ body.overlay-hidden #toggle-overlay {
 }
 .clock-hand.hour {
   width: clamp(5px, 0.8vmin, 8px);
-  height: 24%;
+  height: 22%;
   background: rgba(252, 212, 46, 0.95);
 }
 .clock-hand.minute {
   width: clamp(3px, 0.58vmin, 6px);
-  height: 34%;
+  height: 31%;
   background: rgba(245, 245, 240, 0.92);
 }
 .clock-center-dot {
@@ -339,7 +304,7 @@ body.overlay-hidden #toggle-overlay {
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: var(--yellow);
-  box-shadow: 0 0 0 2px rgba(14, 14, 16, 0.8);
+  box-shadow: 0 0 0 3px rgba(14, 14, 16, 0.82);
 }
 .clock-widget-time {
   color: var(--yellow);
@@ -354,6 +319,7 @@ body.overlay-hidden #toggle-overlay {
   font-size: clamp(0.62rem, 1.55vmin, 0.88rem);
   text-transform: uppercase;
   letter-spacing: 0.16em;
+  transition: opacity 0.28s var(--ease);
 }
 
 /* ---- Controls (bottom strip) ---- */
@@ -377,7 +343,7 @@ body.overlay-hidden #toggle-overlay {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   opacity: 0.55;
-  transition: opacity 0.25s var(--ease);
+  transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
 }
 .stage:hover .controls,
 .stage:focus-within .controls {
@@ -448,6 +414,7 @@ footer {
   letter-spacing: 0.02em;
   pointer-events: auto;
   mix-blend-mode: difference;
+  transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
 }
 footer a {
   color: var(--yellow);
@@ -461,6 +428,36 @@ footer a:focus-visible {
   outline: none;
 }
 
+/* ---- Auto-hide chrome after idle ---- */
+body.ui-idle .controls {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+  pointer-events: none;
+}
+body.ui-idle footer {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+body.ui-idle .clock-widget-hint {
+  opacity: 0;
+}
+body.ui-idle .stage:hover .controls,
+body.ui-idle .stage:focus-within .controls {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+body.ui-idle .stage:hover .clock-widget-hint {
+  opacity: 1;
+}
+body.ui-idle main:hover + footer,
+body.ui-idle footer:hover {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 /* ---- Clock mode ---- */
 body.clock-mode .stage {
   width: 100vw;
@@ -471,7 +468,6 @@ body.clock-mode .stage {
 body.clock-mode header,
 body.clock-mode footer,
 body.clock-mode .controls,
-body.clock-mode .slider,
 body.clock-mode .readout {
   display: none;
 }

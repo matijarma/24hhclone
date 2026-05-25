@@ -39,6 +39,7 @@ const TIME_FORMAT_AMPM = "ampm";
 const STORAGE_TIME_FORMAT_KEY = "24hh.time-format";
 const CLOCK_DOUBLE_TAP_WINDOW_MS = 420;
 const CLOCK_SINGLE_TAP_DELAY_MS = 240;
+const UI_IDLE_DELAY_MS = 12000;
 
 let HOURS = [];
 let manualOverride = false;
@@ -48,6 +49,7 @@ let deferredInstallPrompt = null;
 let clockTapLastAt = 0;
 let clockTapTimer = null;
 let ignoreClockTapUntil = 0;
+let uiIdleTimer = null;
 
 async function boot() {
   wirePwaInstall();
@@ -97,6 +99,7 @@ async function boot() {
 
   wireControls();
   wireGlobalKeys();
+  wireUiAutoHide();
   startTickers(svg);
   watchPlayState();
   watchMuteState();
@@ -525,6 +528,33 @@ function wirePwaInstall() {
   }
 
   refreshInstallButton();
+}
+
+function wireUiAutoHide() {
+  const markUiActive = () => {
+    document.body.classList.remove("ui-idle");
+    scheduleUiIdle();
+  };
+
+  document.addEventListener("pointermove", markUiActive, { passive: true });
+  document.addEventListener("pointerdown", markUiActive, { passive: true });
+  document.addEventListener("touchstart", markUiActive, { passive: true });
+  document.addEventListener("wheel", markUiActive, { passive: true });
+  document.addEventListener("keydown", markUiActive);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") markUiActive();
+  });
+
+  markUiActive();
+}
+
+function scheduleUiIdle() {
+  if (uiIdleTimer !== null) {
+    clearTimeout(uiIdleTimer);
+  }
+  uiIdleTimer = window.setTimeout(() => {
+    document.body.classList.add("ui-idle");
+  }, UI_IDLE_DELAY_MS);
 }
 
 function isStandaloneMode() {
