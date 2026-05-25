@@ -49,6 +49,8 @@ let deferredInstallPrompt = null;
 let clockTapLastAt = 0;
 let clockTapTimer = null;
 let ignoreClockTapUntil = 0;
+let normalTapLastAt = 0;
+let normalTapTimer = null;
 let uiIdleTimer = null;
 
 async function boot() {
@@ -98,6 +100,7 @@ async function boot() {
   });
 
   wireControls();
+  wireNormalQuickActions();
   wireGlobalKeys();
   wireUiAutoHide();
   startTickers(svg);
@@ -155,6 +158,60 @@ function wireControls() {
 
   updateOverlayToggleButton(isOverlayHidden());
   updateFormatToggleButton();
+}
+
+function wireNormalQuickActions() {
+  const stage = document.getElementById("stage");
+  if (!stage) return;
+  stage.addEventListener("click", onNormalModeClick);
+  stage.addEventListener("dblclick", onNormalModeDoubleClick);
+}
+
+function onNormalModeClick(e) {
+  if (clockWidgetMode) return;
+  if (isNormalModeSingleTapExcluded(e.target)) return;
+
+  const now = performance.now();
+  if (now - normalTapLastAt <= CLOCK_DOUBLE_TAP_WINDOW_MS) {
+    normalTapLastAt = 0;
+    clearNormalTapTimer();
+    void enterClockWidgetMode();
+    return;
+  }
+
+  normalTapLastAt = now;
+  clearNormalTapTimer();
+  normalTapTimer = window.setTimeout(() => {
+    normalTapTimer = null;
+    if (clockWidgetMode) return;
+    void toggleMuteState();
+  }, CLOCK_SINGLE_TAP_DELAY_MS);
+}
+
+function onNormalModeDoubleClick(e) {
+  if (clockWidgetMode) return;
+  if (isNormalModeDoubleTapExcluded(e.target)) return;
+  e.preventDefault();
+  normalTapLastAt = 0;
+  clearNormalTapTimer();
+  void enterClockWidgetMode();
+}
+
+function clearNormalTapTimer() {
+  if (normalTapTimer !== null) {
+    clearTimeout(normalTapTimer);
+    normalTapTimer = null;
+  }
+}
+
+function isNormalModeSingleTapExcluded(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest(".controls, footer, header, a, button"));
+}
+
+function isNormalModeDoubleTapExcluded(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest(".controls, footer, header, a, button"));
 }
 
 function wireGlobalKeys() {
@@ -331,6 +388,8 @@ function watchPlayState() {
 async function enterClockWidgetMode() {
   if (clockWidgetMode) return;
 
+  clearNormalTapTimer();
+  normalTapLastAt = 0;
   clockWidgetMode = true;
   ignoreClockTapUntil = performance.now() + 350;
   document.body.classList.add("clock-mode");
@@ -412,6 +471,7 @@ function onClockWidgetDoubleClick(e) {
   if (!clockWidgetMode) return;
   e.preventDefault();
   clearClockTapTimer();
+  clockTapLastAt = 0;
   void exitClockWidgetMode();
 }
 

@@ -260,20 +260,19 @@ body.overlay-hidden #toggle-overlay {
   position: absolute;
   inset: 0;
   z-index: 6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(0.9rem, 2.5vmin, 1.4rem);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.28s var(--ease), visibility 0.28s var(--ease);
 }
 .clock-widget-hands {
-  position: relative;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: min(58vmin, 500px);
   aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  z-index: 1;
 }
 .clock-hand {
   position: absolute;
@@ -307,14 +306,29 @@ body.overlay-hidden #toggle-overlay {
   box-shadow: 0 0 0 3px rgba(14, 14, 16, 0.82);
 }
 .clock-widget-time {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
   color: var(--yellow);
   font-size: clamp(1.8rem, 5.2vmin, 3.4rem);
   font-weight: 700;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  pointer-events: none;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 .clock-widget-hint {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(0.85rem, 3.5vh, 2.1rem);
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: min(90vw, 680px);
+  text-align: center;
+  pointer-events: none;
   color: rgba(245, 245, 240, 0.78);
   font-size: clamp(0.62rem, 1.55vmin, 0.88rem);
   text-transform: uppercase;

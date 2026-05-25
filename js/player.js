@@ -8,6 +8,7 @@ let onEndedCb = null;
 let currentHourLoaded = null;
 let hoursRef = null;
 const MIN_QUALITY = "hd720";
+let qualitySessionToken = 0;
 
 const QUALITY_RANK = Object.freeze({
   highres: 0,
@@ -81,7 +82,7 @@ export async function initPlayer({ hours, initialMinuteOfDay, initialSecondsInMi
       onReady: (e) => {
         try {
           if (startSeconds > 0) e.target.seekTo(startSeconds, true);
-          enforceMinimumQuality(e.target);
+          applyPreferredQuality(e.target, { forceSwitch: false });
           e.target.playVideo();
           scheduleQualityEnforcement(e.target);
         } catch (_) { /* ignore */ }
@@ -90,15 +91,6 @@ export async function initPlayer({ hours, initialMinuteOfDay, initialSecondsInMi
       onStateChange: (e) => {
         if (e.data === YT.PlayerState.ENDED && onEndedCb) {
           onEndedCb(currentHourLoaded);
-          return;
-        }
-        if (
-          e.data === YT.PlayerState.PLAYING
-          || e.data === YT.PlayerState.BUFFERING
-          || e.data === YT.PlayerState.CUED
-        ) {
-          enforceMinimumQuality(e.target);
-          scheduleQualityEnforcement(e.target);
         }
       },
     },
@@ -126,11 +118,12 @@ export async function setMinuteOfDay(minuteOfDay, { secondsInMinute = 0, force =
     ytPlayer.loadVideoById({
       videoId: hoursRef[hour].videoId,
       startSeconds: Math.floor(seekSeconds),
+      suggestedQuality: MIN_QUALITY,
     });
     scheduleQualityEnforcement(ytPlayer);
   } else {
     ytPlayer.seekTo(seekSeconds, true);
-    enforceMinimumQuality(ytPlayer);
+    applyPreferredQuality(ytPlayer, { forceSwitch: false });
   }
 }
 
@@ -181,12 +174,17 @@ function loadIframeApi() {
 }
 
 function scheduleQualityEnforcement(player) {
-  setTimeout(() => enforceMinimumQuality(player), 250);
-  setTimeout(() => enforceMinimumQuality(player), 1000);
-  setTimeout(() => enforceMinimumQuality(player), 2500);
+  const token = ++qualitySessionToken;
+
+  applyPreferredQuality(player, { forceSwitch: false });
+
+  setTimeout(() => {
+    if (token !== qualitySessionToken) return;
+    applyPreferredQuality(player, { forceSwitch: true });
+  }, 1200);
 }
 
-function enforceMinimumQuality(player) {
+function applyPreferredQuality(player, { forceSwitch } = { forceSwitch: false }) {
   if (!player) return;
 
   const targetQuality = resolvePreferredQuality(player);
@@ -199,6 +197,11 @@ function enforceMinimumQuality(player) {
     // Optional API path; ignore failures.
   }
 
+  if (!forceSwitch) return;
+
+  const currentQuality = getCurrentQuality(player);
+  if (!shouldForceSwitch(currentQuality, targetQuality)) return;
+
   try {
     if (typeof player.setPlaybackQuality === "function") {
       player.setPlaybackQuality(targetQuality);
@@ -206,6 +209,26 @@ function enforceMinimumQuality(player) {
   } catch (_) {
     // Optional API path; ignore failures.
   }
+}
+
+function getCurrentQuality(player) {
+  try {
+    return player.getPlaybackQuality?.() || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function shouldForceSwitch(currentQuality, targetQuality) {
+  if (!targetQuality) return false;
+  if (!currentQuality) return true;
+
+  const currentRank = QUALITY_RANK[currentQuality];
+  const targetRank = QUALITY_RANK[targetQuality];
+  if (!Number.isFinite(targetRank)) return false;
+  if (!Number.isFinite(currentRank)) return true;
+
+  return currentRank > targetRank;
 }
 
 function resolvePreferredQuality(player) {
