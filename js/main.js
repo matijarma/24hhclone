@@ -52,6 +52,48 @@ const SLOTS_PER_DAY = 24 * SLOTS_PER_HOUR;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+const CONTINENT_ORDER = ["EU", "AS", "AF", "NA", "SA", "OC", "AN", "??"];
+const CONTINENT_LABEL = {
+  EU: "Europe",
+  AS: "Asia",
+  AF: "Africa",
+  NA: "N. America",
+  SA: "S. America",
+  OC: "Oceania",
+  AN: "Antarctic",
+  "??": "Other",
+};
+const CONTINENT_BY_COUNTRY = {
+  AD:"EU", AL:"EU", AT:"EU", BA:"EU", BE:"EU", BG:"EU", BY:"EU", CH:"EU",
+  CY:"EU", CZ:"EU", DE:"EU", DK:"EU", EE:"EU", ES:"EU", FI:"EU", FR:"EU",
+  GB:"EU", GR:"EU", HR:"EU", HU:"EU", IE:"EU", IS:"EU", IT:"EU", LI:"EU",
+  LT:"EU", LU:"EU", LV:"EU", MC:"EU", MD:"EU", ME:"EU", MK:"EU", MT:"EU",
+  NL:"EU", NO:"EU", PL:"EU", PT:"EU", RO:"EU", RS:"EU", RU:"EU", SE:"EU",
+  SI:"EU", SK:"EU", SM:"EU", UA:"EU", VA:"EU", XK:"EU",
+  BB:"NA", BM:"NA", BS:"NA", BZ:"NA", CA:"NA", CR:"NA", CU:"NA", DO:"NA",
+  GL:"NA", GT:"NA", HN:"NA", HT:"NA", JM:"NA", MX:"NA", NI:"NA", PA:"NA",
+  PR:"NA", SV:"NA", TT:"NA", US:"NA",
+  AR:"SA", BO:"SA", BR:"SA", CL:"SA", CO:"SA", EC:"SA", FK:"SA", GY:"SA",
+  PE:"SA", PY:"SA", SR:"SA", UY:"SA", VE:"SA",
+  AE:"AS", AF:"AS", AM:"AS", AZ:"AS", BD:"AS", BN:"AS", BT:"AS", CN:"AS",
+  GE:"AS", HK:"AS", ID:"AS", IL:"AS", IN:"AS", IQ:"AS", IR:"AS", JO:"AS",
+  JP:"AS", KG:"AS", KH:"AS", KP:"AS", KR:"AS", KW:"AS", KZ:"AS", LA:"AS",
+  LB:"AS", LK:"AS", MM:"AS", MN:"AS", MO:"AS", MV:"AS", MY:"AS", NP:"AS",
+  OM:"AS", PH:"AS", PK:"AS", PS:"AS", QA:"AS", SA:"AS", SG:"AS", SY:"AS",
+  TH:"AS", TJ:"AS", TL:"AS", TM:"AS", TR:"AS", TW:"AS", UZ:"AS", VN:"AS",
+  YE:"AS",
+  AO:"AF", BF:"AF", BI:"AF", BJ:"AF", BW:"AF", CD:"AF", CF:"AF", CG:"AF",
+  CI:"AF", CM:"AF", CV:"AF", DJ:"AF", DZ:"AF", EG:"AF", EH:"AF", ER:"AF",
+  ET:"AF", GA:"AF", GH:"AF", GM:"AF", GN:"AF", GQ:"AF", GW:"AF", KE:"AF",
+  KM:"AF", LR:"AF", LS:"AF", LY:"AF", MA:"AF", MG:"AF", ML:"AF", MR:"AF",
+  MU:"AF", MW:"AF", MZ:"AF", NA:"AF", NE:"AF", NG:"AF", RW:"AF", SC:"AF",
+  SD:"AF", SL:"AF", SN:"AF", SO:"AF", SS:"AF", ST:"AF", SZ:"AF", TD:"AF",
+  TG:"AF", TN:"AF", TZ:"AF", UG:"AF", ZA:"AF", ZM:"AF", ZW:"AF",
+  AU:"OC", FJ:"OC", FM:"OC", KI:"OC", MH:"OC", NC:"OC", NR:"OC", NZ:"OC",
+  PF:"OC", PG:"OC", PW:"OC", SB:"OC", TK:"OC", TO:"OC", TV:"OC", VU:"OC", WS:"OC",
+  AQ:"AN", TF:"AN",
+};
+
 let HOURS = [];
 let FAN_VIDEOS = [];
 let FAN_BY_ID = new Map();
@@ -60,12 +102,11 @@ let flaggedFanVideoIds = new Set();
 
 let customAssignments = createEmptyAssignments();
 let pickerState = {
-  openCountry: "",
+  path: [],
   search: "",
 };
 let activeBrushVideoId = null;
 let slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
-let slotCaptionEls = new Array(24).fill(null);
 let customizerOpen = false;
 let customizerReady = false;
 let paintDragging = false;
@@ -74,10 +115,6 @@ let pendingPaintSlotIndex = null;
 let closeAnimTimer = null;
 let lastNowHourRow = null;
 let lastNowSlotEl = null;
-let mobileSheetState = {
-  open: false,
-  slotIndex: null,
-};
 
 let manualOverride = false;
 let timeFormatMode = loadTimeFormatMode();
@@ -225,7 +262,6 @@ function applyFlaggedFanVideoFilter() {
     renderBrushBar();
     renderPickerLists();
     renderAllSlotCells();
-    renderAllRowCaptions();
   }
 
   updateCustomizeButtonState();
@@ -366,8 +402,7 @@ function wireGlobalKeys() {
   document.addEventListener("keydown", (e) => {
     if (customizerOpen && e.key === "Escape") {
       e.preventDefault();
-      if (mobileSheetState.open) closeMobileSheet();
-      else closeCustomizerModal();
+      closeCustomizerModal();
       return;
     }
 
@@ -797,40 +832,37 @@ function initCustomizerUi() {
   const grid = document.getElementById("customize-grid");
   const desktopRoot = document.getElementById("custom-desktop-picker");
   const desktopSearch = document.getElementById("custom-picker-search");
-  const sheetRoot = document.getElementById("custom-sheet-list");
-  const sheetSearch = document.getElementById("custom-sheet-search");
-  const sheetCloseBtn = document.getElementById("custom-sheet-close");
   const closeTopBtn = document.getElementById("customize-close");
   const closeBottomBtn = document.getElementById("customize-done");
   const resetBtn = document.getElementById("custom-reset");
   const clearBrushBtn = document.getElementById("custom-clear-brush");
-  const sheetEl = document.getElementById("custom-mobile-picker");
   const backdrop = modal?.querySelector(".customize-backdrop");
 
-  if (!modal || !grid || !desktopRoot || !desktopSearch || !sheetRoot || !sheetSearch) return;
+  if (!modal || !grid || !desktopRoot || !desktopSearch) return;
 
   buildCustomizerGrid(grid);
   renderBrushBar();
   renderPickerLists();
   renderAllSlotCells();
-  renderAllRowCaptions();
   renderCustomizerStatus();
 
-  const syncSearchInputs = (value) => {
-    pickerState.search = value;
-    if (desktopSearch.value !== value) desktopSearch.value = value;
-    if (sheetSearch.value !== value) sheetSearch.value = value;
+  desktopSearch.addEventListener("input", () => {
+    pickerState.search = desktopSearch.value;
     renderPickerLists();
-  };
-  desktopSearch.addEventListener("input", () => syncSearchInputs(desktopSearch.value));
-  sheetSearch.addEventListener("input", () => syncSearchInputs(sheetSearch.value));
+  });
 
   desktopRoot.addEventListener("click", onPickerListClick);
-  sheetRoot.addEventListener("click", onPickerListClick);
+
+  document.getElementById("custom-breadcrumb")?.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+    const seg = e.target.closest("[data-breadcrumb-depth]");
+    if (!(seg instanceof HTMLElement)) return;
+    const depth = parseInt(seg.dataset.breadcrumbDepth || "", 10);
+    onBreadcrumbClick(depth);
+  });
 
   grid.addEventListener("pointerdown", onGridPointerDown);
   grid.addEventListener("pointerover", onGridPointerOver);
-  grid.addEventListener("click", onGridClickFallback);
   grid.addEventListener("dblclick", onGridDoubleClick);
   window.addEventListener("pointerup", () => {
     paintDragging = false;
@@ -840,18 +872,8 @@ function initCustomizerUi() {
   closeBottomBtn?.addEventListener("click", closeCustomizerModal);
   resetBtn?.addEventListener("click", resetCustomLayout);
   clearBrushBtn?.addEventListener("click", () => setActiveBrush(null));
-  sheetCloseBtn?.addEventListener("click", closeMobileSheet);
 
-  backdrop?.addEventListener("click", () => {
-    if (mobileSheetState.open) closeMobileSheet();
-    else closeCustomizerModal();
-  });
-
-  if (sheetEl) {
-    sheetEl.addEventListener("click", (e) => {
-      if (e.target === sheetEl) closeMobileSheet();
-    });
-  }
+  backdrop?.addEventListener("click", () => closeCustomizerModal());
 
   customizerReady = true;
   updateCustomizeButtonState();
@@ -880,15 +902,13 @@ function openCustomizerModal() {
   syncSliderInteractivity();
 
   pickerState.search = "";
+  pickerState.path = [];
   const desktopSearch = document.getElementById("custom-picker-search");
-  const sheetSearch = document.getElementById("custom-sheet-search");
   if (desktopSearch) desktopSearch.value = "";
-  if (sheetSearch) sheetSearch.value = "";
 
   renderBrushBar();
   renderPickerLists();
   renderAllSlotCells();
-  renderAllRowCaptions();
   renderCustomizerStatus();
   tickCustomizerNow();
 
@@ -909,7 +929,6 @@ function closeCustomizerModal() {
   paintDragging = false;
   pendingPaintSlotIndex = null;
   clearNowMarker();
-  closeMobileSheet({ immediate: true });
 
   modal.dataset.state = "closing";
 
@@ -951,13 +970,13 @@ function updateCustomizeButtonState() {
 
 function buildCustomizerGrid(gridRoot) {
   slotCellEls = new Array(SLOTS_PER_DAY).fill(null);
-  slotCaptionEls = new Array(24).fill(null);
   gridRoot.textContent = "";
 
   for (let hour = 0; hour < 24; hour++) {
     const row = document.createElement("div");
     row.className = "custom-row";
     row.dataset.hour = String(hour);
+    row.dataset.col = hour < 12 ? "am" : "pm";
 
     const hourLabel = document.createElement("button");
     hourLabel.type = "button";
@@ -981,13 +1000,8 @@ function buildCustomizerGrid(gridRoot) {
       slotCellEls[slotIndex] = btn;
     }
 
-    const caption = document.createElement("div");
-    caption.className = "custom-row-caption";
-    slotCaptionEls[hour] = caption;
-
     row.appendChild(hourLabel);
     row.appendChild(slotsWrap);
-    row.appendChild(caption);
     gridRoot.appendChild(row);
   }
 }
@@ -999,19 +1013,8 @@ function onGridPointerDown(e) {
   const slot = extractSlotIndexFromTarget(e.target);
   if (slot === null) return;
 
-  if (isMobilePickerViewport()) {
-    paintDragging = false;
-    if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
-      assignSlot(slot, activeBrushVideoId);
-    } else {
-      openMobileSheet(slot);
-    }
-    e.preventDefault();
-    return;
-  }
-
   if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
-    paintDragging = true;
+    paintDragging = !isMobilePickerViewport();
     assignSlot(slot, activeBrushVideoId);
     e.preventDefault();
     return;
@@ -1019,18 +1022,11 @@ function onGridPointerDown(e) {
 
   pendingPaintSlotIndex = slot;
   const search = document.getElementById("custom-picker-search");
-  search?.focus();
+  if (search) {
+    search.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    search.focus({ preventScroll: true });
+  }
   announce(`Pick a video to paint slot ${formatSlotLabel(slot)}.`);
-}
-
-function onGridClickFallback(e) {
-  if (!isMobilePickerViewport()) return;
-  if (!(e.target instanceof Element)) return;
-  const slot = extractSlotIndexFromTarget(e.target);
-  if (slot === null) return;
-  if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) return;
-  if (mobileSheetState.open && mobileSheetState.slotIndex === slot) return;
-  openMobileSheet(slot);
 }
 
 function onGridDoubleClick(e) {
@@ -1108,7 +1104,6 @@ function assignSlot(slotIndex, videoId, options = {}) {
 
   customAssignments[slotIndex] = normalizedVideoId;
   renderSlotCell(slotIndex);
-  renderRowCaption(Math.floor(slotIndex / SLOTS_PER_HOUR));
   renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync();
@@ -1124,7 +1119,6 @@ function clearSlotAssignment(slotIndex) {
 
   customAssignments[slotIndex] = null;
   renderSlotCell(slotIndex);
-  renderRowCaption(Math.floor(slotIndex / SLOTS_PER_HOUR));
   renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync();
@@ -1142,7 +1136,6 @@ function pulseSlot(slotIndex) {
 function resetCustomLayout() {
   customAssignments = createEmptyAssignments();
   renderAllSlotCells();
-  renderAllRowCaptions();
   renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync({ immediate: true });
@@ -1205,59 +1198,6 @@ function renderSlotCell(slotIndex) {
   cell.title = `${formatSlotLabel(slotIndex)} - ${fan.title} (${fan.country}${cityPart})${durationPart}${shortPart} (double-click to clear)`;
 }
 
-function renderAllRowCaptions() {
-  for (let hour = 0; hour < 24; hour++) renderRowCaption(hour);
-}
-
-function renderRowCaption(hour) {
-  const caption = slotCaptionEls[hour];
-  if (!caption) return;
-
-  caption.classList.remove("is-assigned", "is-mixed");
-
-  const dominant = dominantHourAssignment(hour);
-  if (!dominant) {
-    caption.textContent = "Official";
-    return;
-  }
-
-  if (dominant.mixed) {
-    caption.classList.add("is-mixed");
-    caption.textContent = `${dominant.fan.city || dominant.fan.country} + more`;
-    return;
-  }
-
-  caption.classList.add("is-assigned");
-  const fan = dominant.fan;
-  caption.textContent = fan.city ? `${fan.city}, ${fan.country}` : fan.country;
-}
-
-function dominantHourAssignment(hour) {
-  const counts = new Map();
-  let totalAssigned = 0;
-  for (let i = 0; i < SLOTS_PER_HOUR; i++) {
-    const id = customAssignments[hour * SLOTS_PER_HOUR + i];
-    if (!id) continue;
-    totalAssigned += 1;
-    counts.set(id, (counts.get(id) || 0) + 1);
-  }
-  if (totalAssigned === 0) return null;
-
-  let topId = null;
-  let topCount = 0;
-  for (const [id, c] of counts) {
-    if (c > topCount) {
-      topCount = c;
-      topId = id;
-    }
-  }
-  if (!topId) return null;
-  const fan = FAN_BY_ID.get(topId);
-  if (!fan) return null;
-
-  return { fan, mixed: counts.size > 1 };
-}
-
 function setActiveBrush(videoId) {
   const normalized = (videoId && FAN_BY_ID.has(videoId)) ? videoId : null;
   if (normalized === activeBrushVideoId) return;
@@ -1283,7 +1223,7 @@ function renderBrushBar() {
     swatch.style.boxShadow = "";
     const hint = document.createElement("p");
     hint.className = "brush-hint";
-    hint.textContent = "Pick a video below or tap an empty slot to begin.";
+    hint.textContent = "Pick a video to paint";
     info.appendChild(hint);
     clearBtn.disabled = true;
     return;
@@ -1297,29 +1237,29 @@ function renderBrushBar() {
   place.className = "brush-place";
   place.textContent = fan.city ? `${fan.city}, ${fan.country}` : fan.country;
 
-  const title = document.createElement("p");
+  const line2 = document.createElement("div");
+  line2.className = "brush-line2";
+
+  const title = document.createElement("span");
   title.className = "brush-title";
   title.textContent = fan.title;
+  line2.appendChild(title);
 
-  const meta = document.createElement("p");
-  meta.className = "brush-meta";
   if (Number.isFinite(fan.duration)) {
     const dur = document.createElement("span");
     dur.className = "brush-duration";
     dur.textContent = formatDurationCompact(fan.duration);
-    meta.appendChild(dur);
+    line2.appendChild(dur);
   }
   if (fan.isShort) {
     const short = document.createElement("span");
-    short.textContent = "Short fallback";
-    short.style.color = "rgba(255, 175, 107, 0.95)";
-    short.style.letterSpacing = "0.04em";
-    meta.appendChild(short);
+    short.className = "brush-short";
+    short.textContent = "Short";
+    line2.appendChild(short);
   }
 
   info.appendChild(place);
-  info.appendChild(title);
-  if (meta.childElementCount > 0) info.appendChild(meta);
+  info.appendChild(line2);
   clearBtn.disabled = false;
 }
 
@@ -1343,14 +1283,39 @@ function hashStr(s) {
 }
 
 function renderPickerLists() {
+  renderBreadcrumbs();
+
   const desktopRoot = document.getElementById("custom-desktop-picker");
-  const sheetRoot = document.getElementById("custom-sheet-list");
   if (desktopRoot) renderPickerInto(desktopRoot);
-  if (sheetRoot) renderPickerInto(sheetRoot);
+}
+
+function continentOf(fan) {
+  return CONTINENT_BY_COUNTRY[fan.country] || "??";
+}
+
+function videosAtPath(path) {
+  return FAN_VIDEOS.filter((fan) => {
+    if (path.length >= 1 && continentOf(fan) !== path[0]) return false;
+    if (path.length >= 2 && fan.country !== path[1]) return false;
+    if (path.length >= 3 && (fan.city || "") !== path[2]) return false;
+    return true;
+  });
+}
+
+function groupKeyForStep(fan, step) {
+  if (step === 0) return continentOf(fan);
+  if (step === 1) return fan.country;
+  if (step === 2) return fan.city || "(unspecified)";
+  return null;
 }
 
 function renderPickerInto(root) {
   root.textContent = "";
+
+  const browseWrap = root.closest(".customize-browse");
+  if (browseWrap) {
+    browseWrap.dataset.searching = pickerState.search.trim().length > 0 ? "true" : "false";
+  }
 
   if (FAN_VIDEOS.length === 0) {
     const empty = document.createElement("p");
@@ -1380,96 +1345,142 @@ function renderPickerInto(root) {
       return;
     }
 
-    const country = document.createElement("div");
-    country.className = "custom-country";
-    country.dataset.open = "true";
-
-    const wrap = document.createElement("div");
-    wrap.className = "custom-country-body-wrap";
-
-    const body = document.createElement("div");
-    body.className = "custom-country-body";
-
-    const inner = document.createElement("div");
-    inner.className = "custom-country-body-inner";
-
     for (const fan of matches) {
-      inner.appendChild(buildVideoOption(fan, { showCountry: true }));
+      root.appendChild(buildVideoOption(fan, { showCountry: true }));
     }
-
-    body.appendChild(inner);
-    wrap.appendChild(body);
-    country.appendChild(wrap);
-    root.appendChild(country);
     return;
   }
 
-  const byCountry = new Map();
-  for (const fan of FAN_VIDEOS) {
-    if (!byCountry.has(fan.country)) byCountry.set(fan.country, []);
-    byCountry.get(fan.country).push(fan);
-  }
-  const sortedCountries = Array.from(byCountry.keys()).sort((a, b) => a.localeCompare(b));
+  const path = pickerState.path.slice();
+  const step = path.length;
+  const candidates = videosAtPath(path);
 
-  for (const country of sortedCountries) {
-    const videos = byCountry.get(country);
-    const isOpen = pickerState.openCountry === country;
-    const hasSelected = activeBrushVideoId && videos.some((v) => v.videoId === activeBrushVideoId);
-
-    const item = document.createElement("div");
-    item.className = "custom-country";
-    item.dataset.country = country;
-    if (isOpen) item.dataset.open = "true";
-    if (hasSelected) item.dataset.hasSelected = "true";
-
-    const header = document.createElement("button");
-    header.type = "button";
-    header.className = "custom-country-header";
-    header.setAttribute("aria-expanded", isOpen ? "true" : "false");
-    header.dataset.toggleCountry = country;
-
-    const chev = document.createElement("span");
-    chev.className = "custom-country-chevron";
-    chev.setAttribute("aria-hidden", "true");
-    header.appendChild(chev);
-
-    const name = document.createElement("span");
-    name.className = "custom-country-name";
-    name.textContent = country;
-    header.appendChild(name);
-
-    const count = document.createElement("span");
-    count.className = "custom-country-count";
-    const cityCount = new Set(videos.map((v) => v.city).filter(Boolean)).size;
-    count.textContent = cityCount > 0
-      ? `${cityCount} ${cityCount === 1 ? "city" : "cities"} · ${videos.length} ${videos.length === 1 ? "video" : "videos"}`
-      : `${videos.length} ${videos.length === 1 ? "video" : "videos"}`;
-    header.appendChild(count);
-
-    const dot = document.createElement("span");
-    dot.className = "custom-country-dot";
-    dot.setAttribute("aria-hidden", "true");
-    header.appendChild(dot);
-
-    item.appendChild(header);
-
-    const wrap = document.createElement("div");
-    wrap.className = "custom-country-body-wrap";
-
-    const body = document.createElement("div");
-    body.className = "custom-country-body";
-
-    const inner = document.createElement("div");
-    inner.className = "custom-country-body-inner";
-    for (const fan of videos) {
-      inner.appendChild(buildVideoOption(fan, { showCountry: false }));
+  if (step === 3) {
+    for (const fan of candidates) {
+      root.appendChild(buildVideoOption(fan, { showCountry: false }));
     }
-
-    body.appendChild(inner);
-    wrap.appendChild(body);
-    item.appendChild(wrap);
-    root.appendChild(item);
+    return;
   }
+
+  const groups = new Map();
+  for (const fan of candidates) {
+    const key = groupKeyForStep(fan, step);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(fan);
+  }
+
+  const pillEntries = [];
+  const cardEntries = [];
+  for (const [key, vids] of groups) {
+    if (vids.length === 1) cardEntries.push({ key, fan: vids[0] });
+    else pillEntries.push({ key, count: vids.length });
+  }
+
+  if (step === 0) {
+    pillEntries.sort((a, b) => CONTINENT_ORDER.indexOf(a.key) - CONTINENT_ORDER.indexOf(b.key));
+  } else {
+    pillEntries.sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key));
+  }
+  cardEntries.sort((a, b) => {
+    const ka = (a.fan.city || a.fan.country || a.key).toLowerCase();
+    const kb = (b.fan.city || b.fan.country || b.key).toLowerCase();
+    return ka.localeCompare(kb) || a.fan.title.localeCompare(b.fan.title);
+  });
+
+  if (pillEntries.length > 0) {
+    const pillWrap = document.createElement("div");
+    pillWrap.className = "custom-pill-wrap";
+    for (const entry of pillEntries) {
+      pillWrap.appendChild(buildPill(entry.key, step, entry.count));
+    }
+    root.appendChild(pillWrap);
+  }
+
+  if (cardEntries.length > 0) {
+    const stack = document.createElement("div");
+    stack.className = "custom-card-stack";
+    if (pillEntries.length > 0) {
+      const lbl = document.createElement("p");
+      lbl.className = "custom-card-stack-label";
+      lbl.textContent = "Direct picks";
+      stack.appendChild(lbl);
+    } else {
+      stack.style.borderTop = "none";
+      stack.style.paddingTop = "0";
+      stack.style.marginTop = "0";
+    }
+    for (const entry of cardEntries) {
+      stack.appendChild(buildVideoOption(entry.fan, { showCountry: step <= 1 }));
+    }
+    root.appendChild(stack);
+  }
+
+  if (pillEntries.length === 0 && cardEntries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "custom-list-empty";
+    empty.textContent = "No videos here.";
+    root.appendChild(empty);
+  }
+}
+
+function buildPill(key, step, count) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "custom-pill";
+  btn.dataset.pillKey = key;
+  btn.dataset.pillStep = String(step);
+
+  const label = document.createElement("span");
+  label.className = "custom-pill-label";
+  if (step === 0) {
+    label.classList.add("is-upper");
+    label.textContent = CONTINENT_LABEL[key] || key;
+  } else if (step === 1) {
+    label.classList.add("is-upper");
+    label.textContent = key;
+  } else {
+    label.textContent = key;
+  }
+  btn.appendChild(label);
+
+  const c = document.createElement("span");
+  c.className = "custom-pill-count";
+  c.textContent = String(count);
+  btn.appendChild(c);
+
+  return btn;
+}
+
+function renderBreadcrumbs() {
+  const el = document.getElementById("custom-breadcrumb");
+  if (el) renderBreadcrumbInto(el);
+}
+
+function renderBreadcrumbInto(el) {
+  el.textContent = "";
+  const path = pickerState.path;
+  const segments = [{ label: "Browse", depth: 0 }];
+  if (path.length >= 1) segments.push({ label: CONTINENT_LABEL[path[0]] || path[0], depth: 1 });
+  if (path.length >= 2) segments.push({ label: path[1], depth: 2 });
+  if (path.length >= 3) segments.push({ label: path[2], depth: 3 });
+
+  segments.forEach((seg, idx) => {
+    if (idx > 0) {
+      const sep = document.createElement("span");
+      sep.className = "picker-breadcrumb-sep";
+      sep.textContent = "›";
+      sep.setAttribute("aria-hidden", "true");
+      el.appendChild(sep);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "picker-breadcrumb-seg";
+    btn.textContent = seg.label;
+    btn.dataset.breadcrumbDepth = String(seg.depth);
+    if (idx === segments.length - 1) btn.classList.add("is-current");
+    el.appendChild(btn);
+  });
 }
 
 function buildVideoOption(fan, { showCountry }) {
@@ -1514,33 +1525,29 @@ function buildVideoOption(fan, { showCountry }) {
 }
 
 function refreshPickerSelection() {
-  const roots = [
-    document.getElementById("custom-desktop-picker"),
-    document.getElementById("custom-sheet-list"),
-  ].filter(Boolean);
-
-  for (const root of roots) {
-    for (const opt of root.querySelectorAll(".custom-video-option")) {
-      const isSelected = opt.dataset.videoId === activeBrushVideoId;
-      opt.classList.toggle("is-selected", isSelected);
-    }
-    for (const item of root.querySelectorAll(".custom-country")) {
-      const country = item.dataset.country;
-      if (!country) continue;
-      const hasSelected = activeBrushVideoId && Array.from(item.querySelectorAll(".custom-video-option")).some((o) => o.dataset.videoId === activeBrushVideoId);
-      if (hasSelected) item.dataset.hasSelected = "true";
-      else delete item.dataset.hasSelected;
-    }
+  const root = document.getElementById("custom-desktop-picker");
+  if (!root) return;
+  for (const opt of root.querySelectorAll(".custom-video-option")) {
+    const isSelected = opt.dataset.videoId === activeBrushVideoId;
+    opt.classList.toggle("is-selected", isSelected);
   }
+}
+
+function onBreadcrumbClick(depth) {
+  if (!Number.isInteger(depth)) return;
+  if (depth >= pickerState.path.length) return;
+  pickerState.path = pickerState.path.slice(0, depth);
+  renderPickerLists();
 }
 
 function onPickerListClick(e) {
   if (!(e.target instanceof Element)) return;
 
-  const header = e.target.closest("[data-toggle-country]");
-  if (header instanceof HTMLElement) {
-    const country = header.dataset.toggleCountry || "";
-    pickerState.openCountry = pickerState.openCountry === country ? "" : country;
+  const pill = e.target.closest(".custom-pill");
+  if (pill instanceof HTMLButtonElement) {
+    const key = pill.dataset.pillKey || "";
+    if (!key) return;
+    pickerState.path = [...pickerState.path, key];
     renderPickerLists();
     return;
   }
@@ -1558,15 +1565,6 @@ function onPickerListClick(e) {
       setActiveBrush(videoId);
       assignSlot(slot, videoId);
       announce(`Painted ${formatSlotLabel(slot)} with ${fan.title}. Brush loaded for more painting.`);
-      return;
-    }
-
-    if (mobileSheetState.open && Number.isInteger(mobileSheetState.slotIndex)) {
-      const slot = mobileSheetState.slotIndex;
-      setActiveBrush(videoId);
-      assignSlot(slot, videoId);
-      closeMobileSheet();
-      announce(`Painted ${formatSlotLabel(slot)} with ${fan.title}.`);
       return;
     }
 
@@ -1820,45 +1818,6 @@ function extractVideoId(url) {
 
 function isMobilePickerViewport() {
   return window.matchMedia(`(max-width: ${MOBILE_PICKER_BREAKPOINT}px)`).matches;
-}
-
-function openMobileSheet(slotIndex) {
-  const sheet = document.getElementById("custom-mobile-picker");
-  if (!sheet) return;
-
-  mobileSheetState = { open: true, slotIndex };
-
-  const titleEl = document.getElementById("custom-sheet-title");
-  const eyebrowEl = document.getElementById("custom-sheet-eyebrow");
-  if (titleEl) {
-    titleEl.textContent = Number.isInteger(slotIndex)
-      ? `Paint slot ${formatSlotLabel(slotIndex)}`
-      : "Pick a video";
-  }
-  if (eyebrowEl) {
-    eyebrowEl.textContent = Number.isInteger(slotIndex) ? "Slot" : "Browse";
-  }
-
-  sheet.hidden = false;
-  renderPickerLists();
-  requestAnimationFrame(() => {
-    sheet.dataset.open = "true";
-  });
-}
-
-function closeMobileSheet({ immediate = false } = {}) {
-  const sheet = document.getElementById("custom-mobile-picker");
-  mobileSheetState = { open: false, slotIndex: null };
-  if (!sheet) return;
-  sheet.dataset.open = "false";
-  if (immediate) {
-    sheet.hidden = true;
-    return;
-  }
-  window.setTimeout(() => {
-    if (mobileSheetState.open) return;
-    sheet.hidden = true;
-  }, 280);
 }
 
 function wirePwaInstall() {
