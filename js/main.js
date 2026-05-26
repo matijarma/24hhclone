@@ -901,11 +901,7 @@ function getCurrentFanPlaybackMeta() {
 }
 
 function formatFanLocationText(fan) {
-  const continentCode = continentOf(fan);
-  const continent = CONTINENT_LABEL[continentCode] || "Other";
-  const cityOrCountry = fan.city || fan.country || "";
-  if (!cityOrCountry) return continent;
-  return `${cityOrCountry}, ${continent}`;
+  return fan && fan.city ? fan.city : "";
 }
 
 function normalizeSecondOfDay(second) {

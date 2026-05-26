@@ -370,7 +370,7 @@ body.overlay-hidden #toggle-overlay {
 .clock-widget-location {
   position: absolute;
   left: 50%;
-  top: 24.5%;
+  top: 27.2%;
   transform: translate(-50%, -50%);
   z-index: 2;
   max-width: min(84vw, 760px);
