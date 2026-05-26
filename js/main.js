@@ -38,6 +38,7 @@ const TIME_FORMAT_24H = "24h";
 const TIME_FORMAT_AMPM = "ampm";
 const STORAGE_TIME_FORMAT_KEY = "24hh.time-format";
 const STORAGE_CUSTOM_LAYOUT_KEY = "24hh.custom-layout.v1";
+const STORAGE_SHUFFLE_HISTORY_KEY = "24hh.shuffle-history.v1";
 
 const CLOCK_DOUBLE_TAP_WINDOW_MS = 420;
 const CLOCK_SINGLE_TAP_DELAY_MS = 240;
@@ -115,6 +116,11 @@ let pendingPaintSlotIndex = null;
 let closeAnimTimer = null;
 let lastNowHourRow = null;
 let lastNowSlotEl = null;
+let deleteMode = false;
+let shuffleMode = false;
+let preShuffleAssignments = null;
+let infoCloseAnimTimer = null;
+let infoMarkdownCache = null;
 
 let manualOverride = false;
 let timeFormatMode = loadTimeFormatMode();
@@ -319,6 +325,10 @@ function wireControls() {
   const installBtn = document.getElementById("install-app");
   const widgetBtn = document.getElementById("clock-widget");
   const customizeBtn = document.getElementById("customize-playlist");
+  const shuffleBtn = document.getElementById("shuffle");
+  const infoBtn = document.getElementById("info");
+  const infoCloseBtn = document.getElementById("info-close");
+  const infoModal = document.getElementById("info-modal");
 
   nowBtn?.addEventListener("click", resyncNow);
   playPauseBtn?.addEventListener("click", () => {
@@ -338,6 +348,10 @@ function wireControls() {
     void enterClockWidgetMode();
   });
   customizeBtn?.addEventListener("click", openCustomizerModal);
+  shuffleBtn?.addEventListener("click", toggleShuffleMode);
+  infoBtn?.addEventListener("click", () => { void openInfoModal(); });
+  infoCloseBtn?.addEventListener("click", closeInfoModal);
+  infoModal?.querySelector(".info-backdrop")?.addEventListener("click", closeInfoModal);
 
   updateOverlayToggleButton(isOverlayHidden());
   updateFormatToggleButton();
@@ -400,6 +414,12 @@ function isNormalModeDoubleTapExcluded(target) {
 
 function wireGlobalKeys() {
   document.addEventListener("keydown", (e) => {
+    if (isInfoModalOpen() && e.key === "Escape") {
+      e.preventDefault();
+      closeInfoModal();
+      return;
+    }
+
     if (customizerOpen && e.key === "Escape") {
       e.preventDefault();
       closeCustomizerModal();
@@ -466,9 +486,9 @@ function updateOverlayToggleButton(hidden) {
   const toggleBtn = document.getElementById("toggle-overlay");
   if (!toggleBtn) return;
 
-  toggleBtn.textContent = hidden ? "Show" : "Hide";
   toggleBtn.setAttribute("aria-pressed", hidden ? "true" : "false");
   toggleBtn.setAttribute("aria-label", hidden ? "Show overlay" : "Hide overlay");
+  toggleBtn.title = hidden ? "Show overlay" : "Hide overlay";
 }
 
 function toggleTimeFormat() {
@@ -518,10 +538,10 @@ async function syncMuteButton() {
 
   try {
     const muted = await isMuted();
-    muteBtn.textContent = muted ? "Unmute" : "Mute";
     muteBtn.classList.toggle("ctrl-unmute", muted);
     muteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
     muteBtn.setAttribute("aria-label", muted ? "Unmute video" : "Mute video");
+    muteBtn.title = muted ? "Unmute" : "Mute";
   } catch (_) {
     // Player might not be ready yet.
   }
@@ -836,6 +856,8 @@ function initCustomizerUi() {
   const closeBottomBtn = document.getElementById("customize-done");
   const resetBtn = document.getElementById("custom-reset");
   const clearBrushBtn = document.getElementById("custom-clear-brush");
+  const randomizeBtn = document.getElementById("custom-randomize");
+  const deletePaintBtn = document.getElementById("custom-delete-paint");
   const backdrop = modal?.querySelector(".customize-backdrop");
 
   if (!modal || !grid || !desktopRoot || !desktopSearch) return;
@@ -871,6 +893,8 @@ function initCustomizerUi() {
   closeBottomBtn?.addEventListener("click", closeCustomizerModal);
   resetBtn?.addEventListener("click", resetCustomLayout);
   clearBrushBtn?.addEventListener("click", () => setActiveBrush(null));
+  randomizeBtn?.addEventListener("click", randomizeGrid);
+  deletePaintBtn?.addEventListener("click", toggleDeleteMode);
 
   backdrop?.addEventListener("click", () => closeCustomizerModal());
 
@@ -884,6 +908,7 @@ function openCustomizerModal() {
     announce("Fan video database is unavailable.");
     return;
   }
+  if (shuffleMode) setShuffleMode(false);
 
   const modal = document.getElementById("customize-modal");
   if (!modal) return;
@@ -895,6 +920,7 @@ function openCustomizerModal() {
 
   customizerOpen = true;
   pendingPaintSlotIndex = null;
+  applyDeleteMode(false);
   modal.hidden = false;
   modal.dataset.state = "opening";
   document.body.classList.add("customize-open");
@@ -942,7 +968,7 @@ function closeCustomizerModal() {
 }
 
 function syncSliderInteractivity() {
-  const interactive = !clockWidgetMode && !customizerOpen && !isOverlayHidden();
+  const interactive = !clockWidgetMode && !customizerOpen && !isOverlayHidden() && !shuffleMode;
   sliderSetInteractive(interactive);
 }
 
@@ -950,15 +976,13 @@ function updateCustomizeButtonState() {
   const btn = document.getElementById("customize-playlist");
   if (!btn) return;
 
-  const assignedCount = countAssignedSlots();
-  btn.textContent = assignedCount > 0
-    ? `Customize (${assignedCount})`
-    : "Customize";
-
   if (FAN_VIDEOS.length === 0) {
     btn.disabled = true;
     btn.setAttribute("aria-disabled", "true");
     btn.title = "Fan video database unavailable";
+  } else if (shuffleMode) {
+    btn.disabled = true;
+    btn.title = "Disabled during shuffle";
   } else {
     btn.disabled = false;
     btn.removeAttribute("aria-disabled");
@@ -1011,6 +1035,13 @@ function onGridPointerDown(e) {
   const slot = extractSlotIndexFromTarget(e.target);
   if (slot === null) return;
 
+  if (deleteMode) {
+    paintDragging = !isMobilePickerViewport();
+    clearSlotAssignment(slot);
+    e.preventDefault();
+    return;
+  }
+
   if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
     paintDragging = !isMobilePickerViewport();
     assignSlot(slot, activeBrushVideoId);
@@ -1042,8 +1073,13 @@ function onGridPointerOver(e) {
 
   const slot = extractSlotIndexFromTarget(e.target);
   if (slot === null) return;
-  if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) return;
 
+  if (deleteMode) {
+    clearSlotAssignment(slot);
+    return;
+  }
+
+  if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) return;
   assignSlot(slot, activeBrushVideoId, { pulse: false });
 }
 
@@ -1195,12 +1231,100 @@ function renderSlotCell(slotIndex) {
 
 function setActiveBrush(videoId) {
   const normalized = (videoId && FAN_BY_ID.has(videoId)) ? videoId : null;
+  if (normalized) applyDeleteMode(false);
   if (normalized === activeBrushVideoId) return;
 
   activeBrushVideoId = normalized;
   renderBrushBar();
   refreshPickerSelection();
   renderAllSlotCells();
+}
+
+function applyDeleteMode(on) {
+  const next = Boolean(on);
+  if (next === deleteMode) return;
+  deleteMode = next;
+
+  document.body.classList.toggle("delete-paint-mode", deleteMode);
+  const btn = document.getElementById("custom-delete-paint");
+  if (btn) {
+    btn.classList.toggle("is-active", deleteMode);
+    btn.setAttribute("aria-pressed", deleteMode ? "true" : "false");
+  }
+  const wrap = document.getElementById("customize-brush");
+  if (wrap) {
+    if (deleteMode) wrap.dataset.mode = "erase";
+    else delete wrap.dataset.mode;
+  }
+  renderBrushBar();
+}
+
+function toggleDeleteMode() {
+  applyDeleteMode(!deleteMode);
+  announce(deleteMode ? "Erase mode on. Tap or drag slots to clear them." : "Erase mode off.");
+}
+
+function shuffleArray(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Build a 360-length array of videoIds from a pool, avoiding consecutive repeats.
+function buildRandomFill(pool) {
+  const ids = pool.map((v) => v.videoId);
+  if (ids.length === 0) return new Array(SLOTS_PER_DAY).fill(null);
+
+  if (ids.length === 1) {
+    const out = new Array(SLOTS_PER_DAY).fill(null);
+    for (let i = 0; i < SLOTS_PER_DAY; i += 2) out[i] = ids[0];
+    return out;
+  }
+
+  const queue = [];
+  while (queue.length < SLOTS_PER_DAY) {
+    for (const id of shuffleArray(ids)) {
+      queue.push(id);
+      if (queue.length >= SLOTS_PER_DAY) break;
+    }
+  }
+  // De-dup consecutive: if queue[i] === queue[i-1], swap with a later non-matching entry.
+  for (let i = 1; i < queue.length; i++) {
+    if (queue[i] !== queue[i - 1]) continue;
+    for (let j = i + 1; j < queue.length; j++) {
+      if (queue[j] !== queue[i - 1] && (j + 1 >= queue.length || queue[j + 1] !== queue[i])) {
+        [queue[i], queue[j]] = [queue[j], queue[i]];
+        break;
+      }
+    }
+  }
+  return queue.slice(0, SLOTS_PER_DAY);
+}
+
+function randomizeGrid() {
+  const scope = pickerState.path.length > 0 ? videosAtPath(pickerState.path) : FAN_VIDEOS.slice();
+  if (scope.length === 0) {
+    announce("No videos in this scope to randomize from.");
+    return;
+  }
+
+  const fill = buildRandomFill(scope);
+  customAssignments = createEmptyAssignments();
+  for (let i = 0; i < SLOTS_PER_DAY; i++) {
+    customAssignments[i] = fill[i] && FAN_BY_ID.has(fill[i]) ? fill[i] : null;
+  }
+  applyDeleteMode(false);
+  renderAllSlotCells();
+  updateCustomizeButtonState();
+  scheduleCustomPlaylistSync({ immediate: true });
+
+  const scopeName = pickerState.path.length > 0
+    ? (CONTINENT_LABEL[pickerState.path[pickerState.path.length - 1]] || pickerState.path[pickerState.path.length - 1])
+    : "all videos";
+  announce(`Randomized the day from ${scope.length} ${scope.length === 1 ? "video" : "videos"} in ${scopeName}.`);
 }
 
 function renderBrushBar() {
@@ -1211,6 +1335,18 @@ function renderBrushBar() {
   if (!wrap || !swatch || !info || !clearBtn) return;
 
   info.textContent = "";
+
+  if (deleteMode) {
+    wrap.dataset.empty = "true";
+    swatch.style.background = "";
+    swatch.style.boxShadow = "";
+    const hint = document.createElement("p");
+    hint.className = "brush-hint";
+    hint.textContent = "Erasing — tap or drag slots to clear";
+    info.appendChild(hint);
+    clearBtn.disabled = !activeBrushVideoId;
+    return;
+  }
 
   if (!activeBrushVideoId || !FAN_BY_ID.has(activeBrushVideoId)) {
     wrap.dataset.empty = "true";
@@ -1658,6 +1794,195 @@ function persistCustomAssignments(assignments) {
   } catch (_) {
     // Local storage unavailable.
   }
+}
+
+function loadShuffleHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_SHUFFLE_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function persistShuffleHistory(ids) {
+  try {
+    localStorage.setItem(STORAGE_SHUFFLE_HISTORY_KEY, JSON.stringify(ids));
+  } catch (_) {
+    // Local storage unavailable.
+  }
+}
+
+function toggleShuffleMode() {
+  setShuffleMode(!shuffleMode);
+}
+
+function setShuffleMode(on) {
+  const next = Boolean(on);
+  if (next === shuffleMode) return;
+
+  const btn = document.getElementById("shuffle");
+  const customizeBtn = document.getElementById("customize-playlist");
+
+  if (next) {
+    if (FAN_VIDEOS.length === 0) {
+      announce("Fan video database is unavailable.");
+      return;
+    }
+    preShuffleAssignments = customAssignments.slice();
+
+    let history = loadShuffleHistory();
+    let pool = FAN_VIDEOS.filter((v) => !history.includes(v.videoId));
+    if (pool.length < SLOTS_PER_DAY) {
+      history = [];
+      pool = FAN_VIDEOS.slice();
+    }
+    const fill = buildRandomFill(shuffleArray(pool).slice(0, Math.max(SLOTS_PER_DAY, pool.length)));
+
+    const usedIds = new Set();
+    const next360 = createEmptyAssignments();
+    for (let i = 0; i < SLOTS_PER_DAY; i++) {
+      const id = fill[i];
+      next360[i] = id && FAN_BY_ID.has(id) ? id : null;
+      if (next360[i]) usedIds.add(next360[i]);
+    }
+    persistShuffleHistory([...history, ...usedIds]);
+
+    customAssignments = next360;
+    shuffleMode = true;
+    document.body.classList.add("shuffle-mode");
+    if (btn) { btn.classList.add("is-active"); btn.setAttribute("aria-pressed", "true"); }
+    if (customizeBtn) { customizeBtn.disabled = true; customizeBtn.title = "Disabled during shuffle"; }
+    syncSliderInteractivity();
+    setCustomPlaylist({ assignmentsBySlot: customAssignments });
+    announce("Shuffle on. Playing random videos.");
+  } else {
+    if (preShuffleAssignments) {
+      customAssignments = preShuffleAssignments.slice();
+      preShuffleAssignments = null;
+    }
+    shuffleMode = false;
+    document.body.classList.remove("shuffle-mode");
+    if (btn) { btn.classList.remove("is-active"); btn.setAttribute("aria-pressed", "false"); }
+    if (customizeBtn) { customizeBtn.disabled = FAN_VIDEOS.length === 0; customizeBtn.title = "Customize 24h slots"; }
+    syncSliderInteractivity();
+    setCustomPlaylist({ assignmentsBySlot: customAssignments });
+    updateCustomizeButtonState();
+    announce("Shuffle off.");
+  }
+}
+
+/* ---- Info modal + minimal markdown ---- */
+function isInfoModalOpen() {
+  const modal = document.getElementById("info-modal");
+  return Boolean(modal && !modal.hidden && modal.dataset.state !== "closed");
+}
+
+async function openInfoModal() {
+  const modal = document.getElementById("info-modal");
+  const content = document.getElementById("info-content");
+  if (!modal || !content) return;
+
+  if (infoCloseAnimTimer !== null) {
+    clearTimeout(infoCloseAnimTimer);
+    infoCloseAnimTimer = null;
+  }
+
+  if (infoMarkdownCache === null) {
+    try {
+      const res = await fetch("hello.md", { cache: "no-store" });
+      infoMarkdownCache = res.ok ? await res.text() : "# About\n\nNo info available.";
+    } catch (_) {
+      infoMarkdownCache = "# About\n\nNo info available.";
+    }
+  }
+  content.innerHTML = renderMarkdown(infoMarkdownCache);
+
+  modal.hidden = false;
+  modal.dataset.state = "opening";
+  requestAnimationFrame(() => {
+    modal.dataset.state = "open";
+    requestAnimationFrame(() => {
+      document.getElementById("info-close")?.focus();
+    });
+  });
+}
+
+function closeInfoModal() {
+  const modal = document.getElementById("info-modal");
+  if (!modal) return;
+  modal.dataset.state = "closing";
+  if (infoCloseAnimTimer !== null) clearTimeout(infoCloseAnimTimer);
+  infoCloseAnimTimer = window.setTimeout(() => {
+    infoCloseAnimTimer = null;
+    modal.hidden = true;
+    modal.dataset.state = "closed";
+  }, 240);
+}
+
+function escapeHtml(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderInlineMarkdown(text) {
+  let out = escapeHtml(text);
+  // code spans first (so their contents aren't further parsed)
+  out = out.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
+  // links [label](url)
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_m, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+  // bold then italic
+  out = out.replace(/\*\*([^*]+)\*\*/g, (_m, c) => `<strong>${c}</strong>`);
+  out = out.replace(/(^|[^*])\*([^*]+)\*/g, (_m, pre, c) => `${pre}<em>${c}</em>`);
+  out = out.replace(/_([^_]+)_/g, (_m, c) => `<em>${c}</em>`);
+  return out;
+}
+
+function renderMarkdown(src) {
+  const lines = String(src).replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let para = [];
+  let listItems = [];
+
+  const flushPara = () => {
+    if (para.length) {
+      html.push(`<p>${renderInlineMarkdown(para.join(" "))}</p>`);
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (listItems.length) {
+      html.push(`<ul>${listItems.map((li) => `<li>${renderInlineMarkdown(li)}</li>`).join("")}</ul>`);
+      listItems = [];
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+
+    if (heading) {
+      flushPara(); flushList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+    } else if (bullet) {
+      flushPara();
+      listItems.push(bullet[1]);
+    } else if (line.trim() === "") {
+      flushPara(); flushList();
+    } else {
+      flushList();
+      para.push(line.trim());
+    }
+  }
+  flushPara(); flushList();
+  return html.join("\n");
 }
 
 function formatSlotLabel(slotIndex) {
