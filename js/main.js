@@ -132,6 +132,7 @@ let ignoreClockTapUntil = 0;
 let normalTapLastAt = 0;
 let normalTapTimer = null;
 let uiIdleTimer = null;
+let lastFanLocationText = null;
 
 async function boot() {
   wirePwaInstall();
@@ -584,6 +585,8 @@ function startTickers(svg) {
       tickCustomizerNow();
     }
 
+    updateFanLocationDisplays();
+
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
@@ -848,6 +851,66 @@ function normalizeMinute(minuteOfDay) {
 function updateReadout(min) {
   const el = document.getElementById("readout-time");
   if (el) el.textContent = formatMinute(min);
+}
+
+function updateFanLocationDisplays() {
+  const fan = getCurrentFanPlaybackMeta();
+  const locationText = fan ? formatFanLocationText(fan) : "";
+  if (locationText === lastFanLocationText) return;
+  lastFanLocationText = locationText;
+
+  const readoutSub = document.getElementById("readout-sub");
+  if (readoutSub) {
+    readoutSub.textContent = locationText ? `now playing from ${locationText}` : "now playing";
+  }
+
+  const clockWidgetLocation = document.getElementById("clock-widget-location");
+  if (clockWidgetLocation) {
+    clockWidgetLocation.textContent = locationText;
+    clockWidgetLocation.dataset.visible = locationText ? "true" : "false";
+  }
+
+  const overlayFanLocation = document.getElementById("overlay-fan-location");
+  if (overlayFanLocation) {
+    overlayFanLocation.textContent = locationText;
+    overlayFanLocation.dataset.visible = locationText ? "true" : "false";
+  }
+}
+
+function getCurrentFanPlaybackMeta() {
+  const currentSecond = getCurrentSecondOfDay();
+  if (!Number.isFinite(currentSecond)) return null;
+
+  const sec = normalizeSecondOfDay(currentSecond);
+  const slotIndex = Math.floor(sec / SLOT_SECONDS);
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= SLOTS_PER_DAY) return null;
+
+  const fanVideoId = customAssignments[slotIndex];
+  if (!fanVideoId) return null;
+
+  const fan = FAN_BY_ID.get(fanVideoId);
+  if (!fan) return null;
+
+  const slotOffset = sec - (slotIndex * SLOT_SECONDS);
+  const fanDuration = Number.isFinite(fan.duration)
+    ? Math.max(0, Math.floor(fan.duration))
+    : SLOT_SECONDS;
+  if (fanDuration <= slotOffset) return null;
+
+  return fan;
+}
+
+function formatFanLocationText(fan) {
+  const continentCode = continentOf(fan);
+  const continent = CONTINENT_LABEL[continentCode] || "Other";
+  const cityOrCountry = fan.city || fan.country || "";
+  if (!cityOrCountry) return continent;
+  return `${cityOrCountry}, ${continent}`;
+}
+
+function normalizeSecondOfDay(second) {
+  const daySeconds = 24 * 60 * 60;
+  return ((Math.floor(second) % daySeconds) + daySeconds) % daySeconds;
 }
 
 function formatMinute(minuteOfDay, { force12h = false } = {}) {

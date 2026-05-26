@@ -263,6 +263,9 @@ body.overlay-hidden #toggle-overlay {
   text-transform: uppercase;
   letter-spacing: 0.32em;
   color: var(--fg-dim);
+  max-width: min(82vw, 860px);
+  margin-inline: auto;
+  line-height: 1.3;
 }
 
 /* ---- Clock Widget Overlay ---- */
@@ -364,6 +367,26 @@ body.overlay-hidden #toggle-overlay {
   pointer-events: none;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
+.clock-widget-location {
+  position: absolute;
+  left: 50%;
+  top: 24.5%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  max-width: min(84vw, 760px);
+  text-align: center;
+  pointer-events: none;
+  color: var(--fg-dim);
+  font-size: clamp(0.62rem, 1.5vmin, 0.9rem);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  opacity: 0;
+  transition: opacity 0.24s var(--ease);
+}
+.clock-widget-location[data-visible="true"] {
+  opacity: 1;
+}
 .clock-widget-hint {
   position: absolute;
   left: 50%;
@@ -378,6 +401,31 @@ body.overlay-hidden #toggle-overlay {
   text-transform: uppercase;
   letter-spacing: 0.16em;
   transition: opacity 0.28s var(--ease);
+}
+.overlay-fan-location {
+  position: fixed;
+  right: clamp(0.8rem, 2.2vw, 1.35rem);
+  bottom: clamp(0.8rem, 2.4vh, 1.4rem);
+  z-index: 11;
+  max-width: min(62vw, 380px);
+  text-align: right;
+  pointer-events: none;
+  color: var(--fg-dim);
+  font-size: clamp(0.58rem, 0.95vw, 0.76rem);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  line-height: 1.3;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.24s var(--ease), transform 0.24s var(--ease);
+}
+body.overlay-hidden .overlay-fan-location[data-visible="true"] {
+  opacity: 0.72;
+  transform: translateY(0);
+}
+body.clock-mode .overlay-fan-location {
+  display: none;
 }
 
 /* ---- Controls (bottom strip) ---- */
