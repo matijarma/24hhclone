@@ -241,8 +241,6 @@ body.overlay-hidden #toggle-overlay {
   text-align: center;
   pointer-events: auto;
   user-select: none;
-  touch-action: manipulation;
-  cursor: pointer;
   text-shadow: 0 2px 16px rgba(0,0,0,0.6);
 }
 .readout-time {
@@ -386,7 +384,7 @@ body.overlay-hidden #toggle-overlay {
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  gap: 0;
+  gap: 0.5rem;
   align-items: center;
   row-gap: 0;
   padding: 0.4rem;
@@ -411,7 +409,7 @@ body.overlay-hidden #toggle-overlay {
   gap: 0.5rem;
 }
 .controls .ctrl-group + .ctrl-group {
-  margin-left: 0.85rem;
+  margin-left: 0.3rem;
 }
 .controls::-webkit-scrollbar {
   display: none;
@@ -1324,11 +1322,11 @@ body.delete-paint-mode .custom-slot:focus-visible {
   .controls { opacity: 1; }
   .controls {
     width: calc(100vw - 0.8rem);
-    gap: 0;
+    gap: 0.4rem;
     padding: 0.45rem;
   }
   .controls .ctrl-group { gap: 0.4rem; }
-  .controls .ctrl-group + .ctrl-group { margin-left: 0.6rem; }
+  .controls .ctrl-group + .ctrl-group { margin-left: 0.25rem; }
   .ctrl {
     min-width: 40px;
     min-height: 40px;
