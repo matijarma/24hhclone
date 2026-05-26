@@ -40,10 +40,11 @@ http://localhost:8765/
 - `Home` / `End`: start/end of day
 - `Space`: play/pause
 - `N`: resync to current local time
+- Click center clock readout: resync to current local time
 - `H`: toggle overlay hide/show
 - `M`: mute/unmute
-- `Now` button: resync to current local time
 - `Mute` / `Unmute` button: toggle audio
+- Controls order/groups: `Mute` `Shuffle` `Customize` `Play/Pause` - `Show/Hide` `Clock Widget` `24h/AMPM` - `Info`
 - `24h` / `AM/PM` button: switch readout format (saved in localStorage)
 - `Customize` button: open 24-hour slot editor, pick fan videos by country/city, and paint slots
 - `Install` button: shown only when PWA install is available and app is not already installed

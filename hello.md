@@ -11,6 +11,7 @@ An unofficial recreation of *Pharrell Williams — Happy (24 Hours of Happy)*, s
 ## Tips
 
 - Hover anywhere to reveal the controls; they fade when you go idle.
+- Click the center clock readout to jump back to now (same as `N`).
 - Press `Space` to play or pause, `N` to resync to now.
 - Double-tap for the fullscreen clock.
 

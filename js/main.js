@@ -317,7 +317,7 @@ function resyncNow() {
 }
 
 function wireControls() {
-  const nowBtn = document.getElementById("now");
+  const readout = document.getElementById("readout");
   const playPauseBtn = document.getElementById("playpause");
   const muteBtn = document.getElementById("mute-toggle");
   const toggleBtn = document.getElementById("toggle-overlay");
@@ -330,7 +330,11 @@ function wireControls() {
   const infoCloseBtn = document.getElementById("info-close");
   const infoModal = document.getElementById("info-modal");
 
-  nowBtn?.addEventListener("click", resyncNow);
+  readout?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resyncNow();
+  });
   playPauseBtn?.addEventListener("click", () => {
     void playPauseToggle();
   });
@@ -364,7 +368,7 @@ function wireNormalQuickActions() {
 }
 
 function onNormalModeClick(e) {
-  if (clockWidgetMode || customizerOpen) return;
+  if (clockWidgetMode || isQuickActionModalOpen()) return;
   if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeSingleTapExcluded(e.target)) return;
 
@@ -380,13 +384,13 @@ function onNormalModeClick(e) {
   clearNormalTapTimer();
   normalTapTimer = window.setTimeout(() => {
     normalTapTimer = null;
-    if (clockWidgetMode || customizerOpen) return;
+    if (clockWidgetMode || isQuickActionModalOpen()) return;
     void toggleMuteState();
   }, CLOCK_SINGLE_TAP_DELAY_MS);
 }
 
 function onNormalModeDoubleClick(e) {
-  if (clockWidgetMode || customizerOpen) return;
+  if (clockWidgetMode || isQuickActionModalOpen()) return;
   if (e.button !== undefined && e.button !== 0) return;
   if (isNormalModeDoubleTapExcluded(e.target)) return;
   e.preventDefault();
@@ -404,12 +408,16 @@ function clearNormalTapTimer() {
 
 function isNormalModeSingleTapExcluded(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(".controls, #slider, footer, header, a, button, .customize-modal"));
+  return Boolean(target.closest(".controls, #slider, .readout, footer, header, a, button, .customize-modal, .info-modal"));
 }
 
 function isNormalModeDoubleTapExcluded(target) {
   if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(".controls, footer, header, a, button, .customize-modal"));
+  return Boolean(target.closest(".controls, .readout, footer, header, a, button, .customize-modal, .info-modal"));
+}
+
+function isQuickActionModalOpen() {
+  return isCustomizerModalOpen() || isInfoModalOpen();
 }
 
 function wireGlobalKeys() {
@@ -627,7 +635,7 @@ function watchPlayState() {
 }
 
 async function enterClockWidgetMode() {
-  if (clockWidgetMode || customizerOpen) return;
+  if (clockWidgetMode || isQuickActionModalOpen()) return;
 
   clearNormalTapTimer();
   normalTapLastAt = 0;
@@ -686,7 +694,7 @@ function detachClockWidgetInput() {
 }
 
 function onClockWidgetPointerUp(e) {
-  if (!clockWidgetMode) return;
+  if (!clockWidgetMode || isQuickActionModalOpen()) return;
   if (e.button !== undefined && e.button !== 0) return;
 
   const now = performance.now();
@@ -703,13 +711,13 @@ function onClockWidgetPointerUp(e) {
   clearClockTapTimer();
   clockTapTimer = window.setTimeout(() => {
     clockTapTimer = null;
-    if (!clockWidgetMode) return;
+    if (!clockWidgetMode || isQuickActionModalOpen()) return;
     void toggleMuteState();
   }, CLOCK_SINGLE_TAP_DELAY_MS);
 }
 
 function onClockWidgetDoubleClick(e) {
-  if (!clockWidgetMode) return;
+  if (!clockWidgetMode || isQuickActionModalOpen()) return;
   e.preventDefault();
   clearClockTapTimer();
   clockTapLastAt = 0;
@@ -1877,6 +1885,11 @@ function setShuffleMode(on) {
 /* ---- Info modal + minimal markdown ---- */
 function isInfoModalOpen() {
   const modal = document.getElementById("info-modal");
+  return Boolean(modal && !modal.hidden && modal.dataset.state !== "closed");
+}
+
+function isCustomizerModalOpen() {
+  const modal = document.getElementById("customize-modal");
   return Boolean(modal && !modal.hidden && modal.dataset.state !== "closed");
 }
 
