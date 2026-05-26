@@ -1281,6 +1281,11 @@ function shuffleArray(arr) {
   return a;
 }
 
+function filterSlotEligibleVideos(videos) {
+  if (!Array.isArray(videos)) return [];
+  return videos.filter((fan) => fan && !fan.isShort);
+}
+
 // Build a 360-length array of videoIds from a pool, avoiding consecutive repeats.
 function buildRandomFill(pool) {
   const ids = pool.map((v) => v.videoId);
@@ -1318,8 +1323,13 @@ function randomizeGrid() {
     announce("No videos in this scope to randomize from.");
     return;
   }
+  const eligibleScope = filterSlotEligibleVideos(scope);
+  if (eligibleScope.length === 0) {
+    announce("No 4+ minute videos in this scope to randomize from.");
+    return;
+  }
 
-  const fill = buildRandomFill(scope);
+  const fill = buildRandomFill(eligibleScope);
   customAssignments = createEmptyAssignments();
   for (let i = 0; i < SLOTS_PER_DAY; i++) {
     customAssignments[i] = fill[i] && FAN_BY_ID.has(fill[i]) ? fill[i] : null;
@@ -1332,7 +1342,7 @@ function randomizeGrid() {
   const scopeName = pickerState.path.length > 0
     ? (CONTINENT_LABEL[pickerState.path[pickerState.path.length - 1]] || pickerState.path[pickerState.path.length - 1])
     : "all videos";
-  announce(`Randomized the day from ${scope.length} ${scope.length === 1 ? "video" : "videos"} in ${scopeName}.`);
+  announce(`Randomized the day from ${eligibleScope.length} ${eligibleScope.length === 1 ? "video" : "videos"} in ${scopeName}.`);
 }
 
 function renderBrushBar() {
@@ -1839,13 +1849,21 @@ function setShuffleMode(on) {
       announce("Fan video database is unavailable.");
       return;
     }
+    const eligibleVideos = filterSlotEligibleVideos(FAN_VIDEOS);
+    if (eligibleVideos.length === 0) {
+      announce("No 4+ minute fan videos available for shuffle.");
+      return;
+    }
     preShuffleAssignments = customAssignments.slice();
 
     let history = loadShuffleHistory();
-    let pool = FAN_VIDEOS.filter((v) => !history.includes(v.videoId));
+    const eligibleIds = new Set(eligibleVideos.map((v) => v.videoId));
+    history = history.filter((id) => eligibleIds.has(id));
+
+    let pool = eligibleVideos.filter((v) => !history.includes(v.videoId));
     if (pool.length < SLOTS_PER_DAY) {
       history = [];
-      pool = FAN_VIDEOS.slice();
+      pool = eligibleVideos.slice();
     }
     const fill = buildRandomFill(shuffleArray(pool).slice(0, Math.max(SLOTS_PER_DAY, pool.length)));
 
