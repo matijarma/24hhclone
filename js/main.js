@@ -19,6 +19,7 @@ import {
   setMinuteOfDay as playerSetMinuteOfDay,
   playPauseToggle,
   isPlaying,
+  resumePlayback,
   unmute,
   mute,
   isMuted,
@@ -133,6 +134,8 @@ let normalTapLastAt = 0;
 let normalTapTimer = null;
 let uiIdleTimer = null;
 let lastFanLocationText = null;
+let wasPlayingBeforeHidden = false;
+let lastFocusRecoveryAt = 0;
 
 async function boot() {
   wirePwaInstall();
@@ -2247,10 +2250,54 @@ function wireUiAutoHide() {
   document.addEventListener("wheel", markUiActive, { passive: true });
   document.addEventListener("keydown", markUiActive);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") markUiActive();
+    if (document.visibilityState === "visible") {
+      markUiActive();
+      void recoverPlaybackAfterFocusReturn();
+    } else if (document.visibilityState === "hidden") {
+      void rememberPlaybackStateBeforeHide();
+    }
+  });
+  window.addEventListener("focus", () => {
+    markUiActive();
+    void recoverPlaybackAfterFocusReturn();
   });
 
   markUiActive();
+}
+
+async function rememberPlaybackStateBeforeHide() {
+  try {
+    wasPlayingBeforeHidden = await isPlaying();
+  } catch (_) {
+    wasPlayingBeforeHidden = false;
+  }
+}
+
+async function recoverPlaybackAfterFocusReturn() {
+  const now = performance.now();
+  if (now - lastFocusRecoveryAt < 650) return;
+  lastFocusRecoveryAt = now;
+
+  if (!wasPlayingBeforeHidden) return;
+
+  let minute = currentMinuteOfDay();
+  let secondInMinute = currentSecondsInMinute();
+
+  const playerSec = getCurrentSecondOfDay();
+  if (manualOverride && Number.isFinite(playerSec)) {
+    const normalized = normalizeSecondOfDay(playerSec);
+    minute = Math.floor(normalized / 60);
+    secondInMinute = normalized % 60;
+  }
+
+  try {
+    await playerSetMinuteOfDay(minute, { secondsInMinute: secondInMinute, force: true });
+    if (!(await isPlaying())) {
+      await resumePlayback();
+    }
+  } catch (_) {
+    // Ignore visibility recovery failures.
+  }
 }
 
 function scheduleUiIdle() {

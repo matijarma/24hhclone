@@ -110,6 +110,7 @@ export async function initPlayer({
   activeResolved = first;
 
   ytPlayer = new YT.Player("player", {
+    host: "https://www.youtube-nocookie.com",
     width: "100%",
     height: "100%",
     videoId: first.videoId,
@@ -184,6 +185,17 @@ export async function isPlaying() {
     return ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
   } catch (_) {
     return false;
+  }
+}
+
+export async function resumePlayback() {
+  await readyPromise;
+  if (!ytPlayer) return;
+  try {
+    ytPlayer.playVideo();
+    scheduleQualityEnforcement(ytPlayer);
+  } catch (_) {
+    // Ignore resume failures caused by browser policies/races.
   }
 }
 
