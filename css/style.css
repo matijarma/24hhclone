@@ -241,7 +241,13 @@ body.overlay-hidden #toggle-overlay {
   text-align: center;
   pointer-events: auto;
   user-select: none;
+  cursor: pointer;
   text-shadow: 0 2px 16px rgba(0,0,0,0.6);
+  transition: transform 0.18s var(--ease), filter 0.18s var(--ease);
+}
+.readout:hover {
+  transform: translate(-50%, -50%) scale(1.012);
+  filter: brightness(1.06);
 }
 .readout-time {
   font-size: clamp(2rem, 7vw, 5rem);
@@ -384,11 +390,12 @@ body.overlay-hidden #toggle-overlay {
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0;
   align-items: center;
   row-gap: 0;
   padding: 0.4rem;
-  width: min(98vw, 1240px);
+  width: fit-content;
+  max-width: min(98vw, 1240px);
   background: var(--bg-soft);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 999px;
@@ -406,10 +413,10 @@ body.overlay-hidden #toggle-overlay {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.36rem;
 }
 .controls .ctrl-group + .ctrl-group {
-  margin-left: 0.3rem;
+  margin-left: 0.72rem;
 }
 .controls::-webkit-scrollbar {
   display: none;
@@ -1321,12 +1328,13 @@ body.delete-paint-mode .custom-slot:focus-visible {
   footer { font-size: 0.65rem; padding: 0.4rem 0.6rem; }
   .controls { opacity: 1; }
   .controls {
-    width: calc(100vw - 0.8rem);
-    gap: 0.4rem;
+    width: fit-content;
+    max-width: calc(100vw - 0.8rem);
+    gap: 0;
     padding: 0.45rem;
   }
-  .controls .ctrl-group { gap: 0.4rem; }
-  .controls .ctrl-group + .ctrl-group { margin-left: 0.25rem; }
+  .controls .ctrl-group { gap: 0.3rem; }
+  .controls .ctrl-group + .ctrl-group { margin-left: 0.5rem; }
   .ctrl {
     min-width: 40px;
     min-height: 40px;
