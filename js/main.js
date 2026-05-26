@@ -844,7 +844,6 @@ function initCustomizerUi() {
   renderBrushBar();
   renderPickerLists();
   renderAllSlotCells();
-  renderCustomizerStatus();
 
   desktopSearch.addEventListener("input", () => {
     pickerState.search = desktopSearch.value;
@@ -909,7 +908,6 @@ function openCustomizerModal() {
   renderBrushBar();
   renderPickerLists();
   renderAllSlotCells();
-  renderCustomizerStatus();
   tickCustomizerNow();
 
   requestAnimationFrame(() => {
@@ -1104,7 +1102,6 @@ function assignSlot(slotIndex, videoId, options = {}) {
 
   customAssignments[slotIndex] = normalizedVideoId;
   renderSlotCell(slotIndex);
-  renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync();
 
@@ -1119,7 +1116,6 @@ function clearSlotAssignment(slotIndex) {
 
   customAssignments[slotIndex] = null;
   renderSlotCell(slotIndex);
-  renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync();
 }
@@ -1136,7 +1132,6 @@ function pulseSlot(slotIndex) {
 function resetCustomLayout() {
   customAssignments = createEmptyAssignments();
   renderAllSlotCells();
-  renderCustomizerStatus();
   updateCustomizeButtonState();
   scheduleCustomPlaylistSync({ immediate: true });
   announce("Custom layout reset to default timeline.");
@@ -1330,6 +1325,9 @@ function renderPickerInto(root) {
   const searching = query.length > 0;
   root.dataset.search = searching ? "true" : "false";
 
+  const wrap = document.createElement("div");
+  wrap.className = "custom-pill-wrap";
+
   if (searching) {
     const matches = FAN_VIDEOS.filter((fan) => (
       fan.title.toLowerCase().includes(query)
@@ -1344,10 +1342,11 @@ function renderPickerInto(root) {
       root.appendChild(empty);
       return;
     }
-
+    matches.sort((a, b) => (a.city || a.country).localeCompare(b.city || b.country) || a.title.localeCompare(b.title));
     for (const fan of matches) {
-      root.appendChild(buildVideoOption(fan, { showCountry: true }));
+      wrap.appendChild(buildVideoPill(fan, { context: "search" }));
     }
+    root.appendChild(wrap);
     return;
   }
 
@@ -1356,9 +1355,11 @@ function renderPickerInto(root) {
   const candidates = videosAtPath(path);
 
   if (step === 3) {
-    for (const fan of candidates) {
-      root.appendChild(buildVideoOption(fan, { showCountry: false }));
+    const sorted = candidates.slice().sort((a, b) => a.title.localeCompare(b.title));
+    for (const fan of sorted) {
+      wrap.appendChild(buildVideoPill(fan, { context: "terminal" }));
     }
+    root.appendChild(wrap);
     return;
   }
 
@@ -1370,58 +1371,41 @@ function renderPickerInto(root) {
     groups.get(key).push(fan);
   }
 
-  const pillEntries = [];
-  const cardEntries = [];
+  const drillEntries = [];
+  const videoEntries = [];
   for (const [key, vids] of groups) {
-    if (vids.length === 1) cardEntries.push({ key, fan: vids[0] });
-    else pillEntries.push({ key, count: vids.length });
+    if (vids.length === 1) videoEntries.push({ key, fan: vids[0] });
+    else drillEntries.push({ key, count: vids.length });
   }
 
   if (step === 0) {
-    pillEntries.sort((a, b) => CONTINENT_ORDER.indexOf(a.key) - CONTINENT_ORDER.indexOf(b.key));
+    drillEntries.sort((a, b) => CONTINENT_ORDER.indexOf(a.key) - CONTINENT_ORDER.indexOf(b.key));
   } else {
-    pillEntries.sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key));
+    drillEntries.sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key));
   }
-  cardEntries.sort((a, b) => {
+  videoEntries.sort((a, b) => {
     const ka = (a.fan.city || a.fan.country || a.key).toLowerCase();
     const kb = (b.fan.city || b.fan.country || b.key).toLowerCase();
     return ka.localeCompare(kb) || a.fan.title.localeCompare(b.fan.title);
   });
 
-  if (pillEntries.length > 0) {
-    const pillWrap = document.createElement("div");
-    pillWrap.className = "custom-pill-wrap";
-    for (const entry of pillEntries) {
-      pillWrap.appendChild(buildPill(entry.key, step, entry.count));
-    }
-    root.appendChild(pillWrap);
+  for (const entry of drillEntries) {
+    wrap.appendChild(buildPill(entry.key, step, entry.count));
+  }
+  for (const entry of videoEntries) {
+    const ctx = step === 1 ? "country" : "city";
+    wrap.appendChild(buildVideoPill(entry.fan, { context: ctx }));
   }
 
-  if (cardEntries.length > 0) {
-    const stack = document.createElement("div");
-    stack.className = "custom-card-stack";
-    if (pillEntries.length > 0) {
-      const lbl = document.createElement("p");
-      lbl.className = "custom-card-stack-label";
-      lbl.textContent = "Direct picks";
-      stack.appendChild(lbl);
-    } else {
-      stack.style.borderTop = "none";
-      stack.style.paddingTop = "0";
-      stack.style.marginTop = "0";
-    }
-    for (const entry of cardEntries) {
-      stack.appendChild(buildVideoOption(entry.fan, { showCountry: step <= 1 }));
-    }
-    root.appendChild(stack);
-  }
-
-  if (pillEntries.length === 0 && cardEntries.length === 0) {
+  if (drillEntries.length === 0 && videoEntries.length === 0) {
     const empty = document.createElement("p");
     empty.className = "custom-list-empty";
     empty.textContent = "No videos here.";
     root.appendChild(empty);
+    return;
   }
+
+  root.appendChild(wrap);
 }
 
 function buildPill(key, step, count) {
@@ -1483,51 +1467,53 @@ function renderBreadcrumbInto(el) {
   });
 }
 
-function buildVideoOption(fan, { showCountry }) {
+function buildVideoPill(fan, { context }) {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "custom-video-option";
+  btn.className = "custom-pill is-video";
   btn.dataset.videoId = fan.videoId;
   if (activeBrushVideoId === fan.videoId) btn.classList.add("is-selected");
   if (fan.isShort) btn.classList.add("is-short");
 
-  const radio = document.createElement("span");
-  radio.className = "custom-video-radio";
-  radio.setAttribute("aria-hidden", "true");
-  btn.appendChild(radio);
+  if (fan.isShort) {
+    const dot = document.createElement("span");
+    dot.className = "custom-pill-dot";
+    dot.setAttribute("aria-hidden", "true");
+    btn.appendChild(dot);
+  }
 
-  const body = document.createElement("div");
-  body.className = "custom-video-body";
+  const label = document.createElement("span");
+  label.className = "custom-pill-label";
 
-  const city = document.createElement("span");
-  city.className = "custom-video-city";
-  const cityText = fan.city || fan.country;
-  city.textContent = showCountry && fan.city
-    ? `${fan.city} · ${fan.country}`
-    : cityText;
-  body.appendChild(city);
-
-  const title = document.createElement("span");
-  title.className = "custom-video-title";
-  title.textContent = fan.title;
-  body.appendChild(title);
-
-  btn.appendChild(body);
+  let labelText;
+  if (context === "search") {
+    const place = fan.city ? `${fan.city}, ${fan.country}` : fan.country;
+    labelText = `${place} · ${fan.title}`;
+  } else if (context === "country") {
+    labelText = fan.city || fan.country;
+  } else if (context === "city") {
+    labelText = fan.city || fan.country;
+  } else {
+    labelText = fan.title;
+  }
+  label.textContent = labelText;
+  btn.appendChild(label);
 
   if (Number.isFinite(fan.duration)) {
     const dur = document.createElement("span");
-    dur.className = "custom-video-duration";
+    dur.className = "custom-pill-duration";
     dur.textContent = formatDurationCompact(fan.duration);
     btn.appendChild(dur);
   }
 
+  btn.title = `${fan.title}${fan.city ? ` — ${fan.city}, ${fan.country}` : ` — ${fan.country}`}`;
   return btn;
 }
 
 function refreshPickerSelection() {
   const root = document.getElementById("custom-desktop-picker");
   if (!root) return;
-  for (const opt of root.querySelectorAll(".custom-video-option")) {
+  for (const opt of root.querySelectorAll(".custom-pill.is-video")) {
     const isSelected = opt.dataset.videoId === activeBrushVideoId;
     opt.classList.toggle("is-selected", isSelected);
   }
@@ -1545,14 +1531,19 @@ function onPickerListClick(e) {
 
   const pill = e.target.closest(".custom-pill");
   if (pill instanceof HTMLButtonElement) {
-    const key = pill.dataset.pillKey || "";
-    if (!key) return;
-    pickerState.path = [...pickerState.path, key];
-    renderPickerLists();
-    return;
+    const videoId = pill.dataset.videoId;
+    if (videoId && FAN_BY_ID.has(videoId)) {
+      // fall through to video-pick handling below
+    } else {
+      const key = pill.dataset.pillKey || "";
+      if (!key) return;
+      pickerState.path = [...pickerState.path, key];
+      renderPickerLists();
+      return;
+    }
   }
 
-  const option = e.target.closest(".custom-video-option");
+  const option = pill && pill.dataset.videoId ? pill : null;
   if (option instanceof HTMLButtonElement) {
     const videoId = option.dataset.videoId;
     if (!videoId || !FAN_BY_ID.has(videoId)) return;
@@ -1610,21 +1601,6 @@ function clearNowMarker() {
   if (lastNowSlotEl) {
     lastNowSlotEl.classList.remove("is-now-tick");
     lastNowSlotEl = null;
-  }
-}
-
-function renderCustomizerStatus() {
-  const status = document.getElementById("customize-status");
-  const done = document.getElementById("customize-done");
-  const count = countAssignedSlots();
-
-  if (status) {
-    status.textContent = count === 0
-      ? "All hours · original timeline"
-      : `${count} of ${SLOTS_PER_DAY} slots · ${Math.round((count / SLOTS_PER_DAY) * 100)}%`;
-  }
-  if (done) {
-    done.textContent = count > 0 ? `Done · ${count} set` : "Done";
   }
 }
 

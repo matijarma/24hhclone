@@ -88,16 +88,24 @@
             <p class="brush-hint">Pick a video to paint</p>
           </div>
         </div>
-        <p class="customize-status" id="customize-status" aria-live="polite"></p>
         <div class="customize-head-buttons">
-          <button id="custom-clear-brush" class="ctrl ctrl-compact" aria-label="Clear brush" disabled>Clear</button>
-          <button id="customize-close" class="ctrl ctrl-compact" aria-label="Close customizer">Close</button>
+          <button id="custom-reset" class="ctrl ctrl-icon" aria-label="Reset all painted slots" title="Reset all">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+          </button>
+          <button id="custom-clear-brush" class="ctrl ctrl-icon" aria-label="Clear brush" title="Clear brush" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>
+          </button>
+          <button id="customize-done" class="ctrl ctrl-icon ctrl-primary" aria-label="Done customizing" title="Done">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+          </button>
+          <button id="customize-close" class="ctrl ctrl-icon" aria-label="Close customizer" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
         </div>
       </header>
 
       <div class="customize-body">
         <section class="customize-browse" aria-label="Browse fan videos">
-          <p class="eyebrow">Browse</p>
           <div class="browse-top-row">
             <nav class="picker-breadcrumb" id="custom-breadcrumb" aria-label="Browse path"></nav>
             <label class="custom-picker-search-wrap" for="custom-picker-search">
@@ -108,15 +116,9 @@
         </section>
 
         <section class="customize-day" aria-label="Day timeline">
-          <p class="eyebrow">Day</p>
           <div class="customize-grid" id="customize-grid"></div>
         </section>
       </div>
-
-      <footer class="customize-foot">
-        <button id="custom-reset" class="ctrl" aria-label="Reset custom layout">Reset</button>
-        <button id="customize-done" class="ctrl ctrl-primary" aria-label="Done customizing">Done</button>
-      </footer>
     </div>
   </div>
 
