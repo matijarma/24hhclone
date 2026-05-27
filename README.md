@@ -16,20 +16,6 @@ https://24hh.matijar.info
 - Fan video customizer (`24 x 15` slot painter with local persistence + original fallback)
 - Background fan-video health checks (Cloudflare Worker + YouTube Data API v3, cached 24h)
 
-## Run Locally
-
-Use a local HTTP server (opening `index.html` from `file://` can block JSON fetches):
-
-```bash
-python -m http.server 8765
-```
-
-Then open:
-
-```text
-http://localhost:8765/
-```
-
 ## Controls
 
 ### Normal Mode
