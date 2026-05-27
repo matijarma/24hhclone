@@ -55,7 +55,8 @@ const FOCUS_RECOVERY_MIN_GAP_MS = 5000;
 const FOCUS_RECOVERY_FORCE_DRIFT_SEC = 8;
 const PLAYBACK_HEALTH_SAMPLE_MS = 2000;
 const PLAYBACK_STALL_PROGRESS_EPS_SEC = 0.35;
-const PLAYBACK_STALL_THRESHOLD_MS = 20000;
+const PLAYBACK_STALL_THRESHOLD_MS = 45000;
+const PLAYBACK_SEEK_RESET_DELTA_SEC = 1.5;
 const PLAYBACK_STABLE_AFTER_RECOVERY_MS = 8000;
 const PLAYBACK_RECOVERY_BACKOFF_SECONDS = [5, 15, 30, 60, 120, 300];
 
@@ -126,6 +127,9 @@ let customizerReady = false;
 let paintDragging = false;
 let customSyncTimer = null;
 let pendingPaintSlotIndex = null;
+let customDayPage = "am";
+let gridTouch = null;
+let gridSwiping = false;
 let closeAnimTimer = null;
 let lastNowHourRow = null;
 let lastNowSlotEl = null;
@@ -299,6 +303,17 @@ async function runPlaybackHealthProbe() {
     }
 
     const delta = currentVideoTime - playbackLastVideoTime;
+    if (delta <= -PLAYBACK_SEEK_RESET_DELTA_SEC) {
+      // Normal timeline resets (segment/hour transitions or seeks) must reset
+      // stall tracking, otherwise we can falsely mark healthy playback as stuck.
+      playbackLastVideoTime = currentVideoTime;
+      playbackLastProgressAt = now;
+      if (playbackStatusMode === "healthy") {
+        playbackStableSince = now;
+      }
+      return;
+    }
+
     if (delta >= PLAYBACK_STALL_PROGRESS_EPS_SEC) {
       markPlaybackProgress(now, currentVideoTime);
       return;
@@ -309,7 +324,11 @@ async function runPlaybackHealthProbe() {
     if (stagnantForMs < PLAYBACK_STALL_THRESHOLD_MS) return;
 
     const currentlyPlaying = await isPlaying().catch(() => false);
-    if (!currentlyPlaying && userPausedPlayback) return;
+    if (!currentlyPlaying) {
+      playbackLastVideoTime = currentVideoTime;
+      playbackLastProgressAt = now;
+      return;
+    }
 
     queuePlaybackRecovery({
       category: "stall_detected",
@@ -452,6 +471,12 @@ function handlePlayerIssue(issue) {
   const category = issue && typeof issue.category === "string"
     ? issue.category
     : "unknown";
+
+  if (category !== "embedding_blocked" && category !== "not_found_or_private") {
+    // `player_error` and `unknown` are too noisy in normal playback; stall
+    // detection already handles real playback freezes.
+    return;
+  }
 
   queuePlaybackRecovery({ category }, { immediate: false });
 }
@@ -824,6 +849,7 @@ function toggleTimeFormat() {
   persistTimeFormatMode(timeFormatMode);
   sliderSetLabelMode(timeFormatMode);
   updateFormatToggleButton();
+  updateDayPagerLabels();
   updateReadout(getClockReference().minuteFloor);
   announce(`Time format set to ${timeFormatMode === TIME_FORMAT_24H ? "24-hour" : "AM/PM"}.`);
 
@@ -1302,6 +1328,21 @@ function initCustomizerUi() {
     paintDragging = false;
   });
 
+  // Touch swipe/tap gesture for the paginated mobile grid.
+  grid.addEventListener("pointerdown", onGridTouchStart);
+  grid.addEventListener("pointermove", onGridTouchMove, { passive: false });
+  grid.addEventListener("pointerup", onGridTouchEnd);
+  grid.addEventListener("pointercancel", () => { gridTouch = null; gridSwiping = false; });
+
+  document.getElementById("customize-day-pager")?.addEventListener("click", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".day-pager-btn") : null;
+    if (!(btn instanceof HTMLElement)) return;
+    const page = btn.dataset.page === "pm" ? "pm" : "am";
+    setCustomDayPage(page, { animate: true, dir: page === "pm" ? "next" : "prev" });
+  });
+
+  setCustomDayPage("am");
+
   closeTopBtn?.addEventListener("click", closeCustomizerModal);
   closeBottomBtn?.addEventListener("click", closeCustomizerModal);
   resetBtn?.addEventListener("click", resetCustomLayout);
@@ -1334,6 +1375,8 @@ function openCustomizerModal() {
   customizerOpen = true;
   pendingPaintSlotIndex = null;
   applyDeleteMode(false);
+  // Open on the half-day containing the current hour (mobile pagination).
+  setCustomDayPage(Math.floor(currentMinuteOfDay() / 60) < 12 ? "am" : "pm");
   modal.hidden = false;
   modal.dataset.state = "opening";
   document.body.classList.add("customize-open");
@@ -1441,24 +1484,17 @@ function buildCustomizerGrid(gridRoot) {
   }
 }
 
-function onGridPointerDown(e) {
-  if (!(e.target instanceof Element)) return;
-  if (e.button !== undefined && e.button !== 0) return;
-
-  const slot = extractSlotIndexFromTarget(e.target);
+// Shared paint action for a single slot (used by mouse pointerdown and touch tap).
+function applyPaintAtSlot(slot) {
   if (slot === null) return;
 
   if (deleteMode) {
-    paintDragging = !isMobilePickerViewport();
     clearSlotAssignment(slot);
-    e.preventDefault();
     return;
   }
 
   if (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId)) {
-    paintDragging = !isMobilePickerViewport();
     assignSlot(slot, activeBrushVideoId);
-    e.preventDefault();
     return;
   }
 
@@ -1469,6 +1505,101 @@ function onGridPointerDown(e) {
     search.focus({ preventScroll: true });
   }
   announce(`Pick a video to paint slot ${formatSlotLabel(slot)}.`);
+}
+
+function onGridPointerDown(e) {
+  if (!(e.target instanceof Element)) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  // Touch is handled by the swipe/tap gesture (onGridTouch*); this is mouse/pen.
+  if (e.pointerType === "touch") return;
+
+  const slot = extractSlotIndexFromTarget(e.target);
+  if (slot === null) return;
+
+  const willPaint = deleteMode || (activeBrushVideoId && FAN_BY_ID.has(activeBrushVideoId));
+  applyPaintAtSlot(slot);
+  if (willPaint) {
+    paintDragging = !isMobilePickerViewport();
+    e.preventDefault();
+  }
+}
+
+// Touch gesture: a near-stationary touch paints the slot; a horizontal drag flips
+// the AM/PM page (no scrolling, so this never fights painting).
+function onGridTouchStart(e) {
+  if (e.pointerType !== "touch") return;
+  gridTouch = { x: e.clientX, y: e.clientY, slot: extractSlotIndexFromTarget(e.target), id: e.pointerId };
+  gridSwiping = false;
+}
+
+function onGridTouchMove(e) {
+  if (!gridTouch || e.pointerId !== gridTouch.id) return;
+  const dx = e.clientX - gridTouch.x;
+  const dy = e.clientY - gridTouch.y;
+  if (!gridSwiping && Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+    gridSwiping = true;
+  }
+  if (gridSwiping) e.preventDefault();
+}
+
+function onGridTouchEnd(e) {
+  if (!gridTouch || e.pointerId !== gridTouch.id) return;
+  const dx = e.clientX - gridTouch.x;
+  const dy = e.clientY - gridTouch.y;
+  const slot = gridTouch.slot;
+  const swiping = gridSwiping;
+  gridTouch = null;
+  gridSwiping = false;
+
+  if (swiping && Math.abs(dx) > 45) {
+    flipCustomDayPage(dx < 0 ? "next" : "prev");
+    return;
+  }
+  if (Math.abs(dx) < 14 && Math.abs(dy) < 14 && slot !== null) {
+    applyPaintAtSlot(slot);
+  }
+}
+
+function setCustomDayPage(page, { animate = false, dir = "next" } = {}) {
+  customDayPage = page === "pm" ? "pm" : "am";
+  document.body.dataset.custPage = customDayPage;
+  const pager = document.getElementById("customize-day-pager");
+  if (pager) {
+    pager.querySelectorAll(".day-pager-btn").forEach((btn) => {
+      btn.setAttribute("aria-selected", btn.dataset.page === customDayPage ? "true" : "false");
+    });
+  }
+  updateDayPagerLabels();
+  if (animate) {
+    const grid = document.getElementById("customize-grid");
+    if (grid) {
+      grid.classList.remove("is-switching-next", "is-switching-prev");
+      void grid.offsetWidth; // restart the animation
+      grid.classList.add(dir === "prev" ? "is-switching-prev" : "is-switching-next");
+    }
+  }
+}
+
+function flipCustomDayPage(dir) {
+  setCustomDayPage(customDayPage === "am" ? "pm" : "am", { animate: true, dir });
+}
+
+// Pager tab labels follow the main screen's time-format setting: 24h (default)
+// shows the hour ranges, 12-hour shows AM/PM.
+function updateDayPagerLabels() {
+  const pager = document.getElementById("customize-day-pager");
+  if (!pager) return;
+  const is24h = timeFormatMode === TIME_FORMAT_24H;
+  const amBtn = pager.querySelector('.day-pager-btn[data-page="am"]');
+  const pmBtn = pager.querySelector('.day-pager-btn[data-page="pm"]');
+  if (amBtn) {
+    amBtn.textContent = is24h ? "00–11" : "AM";
+    amBtn.setAttribute("aria-label", "Show hours 00 to 11");
+  }
+  if (pmBtn) {
+    pmBtn.textContent = is24h ? "12–23" : "PM";
+    pmBtn.setAttribute("aria-label", "Show hours 12 to 23");
+  }
 }
 
 function onGridDoubleClick(e) {

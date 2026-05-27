@@ -957,6 +957,10 @@ body.delete-paint-mode .custom-slot:focus-visible {
   flex-direction: column;
   gap: 10px;
 }
+/* AM/PM day pager (phones only — desktop keeps the two-column grid). */
+.customize-day-pager { display: none; }
+@keyframes cust-page-next { from { opacity: 0; transform: translateX(7%); } to { opacity: 1; transform: none; } }
+@keyframes cust-page-prev { from { opacity: 0; transform: translateX(-7%); } to { opacity: 1; transform: none; } }
 .browse-top-row {
   display: flex;
   align-items: center;
@@ -1476,14 +1480,9 @@ body.delete-paint-mode .custom-slot:focus-visible {
       0.7rem
       max(0.9rem, env(safe-area-inset-left));
   }
-  body > footer {
-    font-size: 0.65rem;
-    padding:
-      0.4rem
-      max(0.6rem, env(safe-area-inset-right))
-      max(0.4rem, env(safe-area-inset-bottom))
-      max(0.6rem, env(safe-area-inset-left));
-  }
+  /* Credits live in the Info modal on phones; hide the footer so the controls
+     can sit at the very bottom of the screen. */
+  body > footer { display: none; }
   /* All controls always visible: wrap into a centered multi-row capsule
      instead of a single row that scrolls buttons off-screen. The fixed width
      forces a clean two-row break rather than collapsing per group. */
@@ -1616,19 +1615,87 @@ body.delete-paint-mode .custom-slot:focus-visible {
       max(14px, env(safe-area-inset-left));
     border: 0;
   }
-  .custom-row {
-    grid-template-columns: 28px minmax(0, 1fr);
-    gap: 10px;
-    min-height: 32px;
+  /* No modal scroll: only the video list scrolls internally; the day grid is
+     paginated to fit. (Removes the -4px scrollbar gutter that leaned it right.) */
+  .customize-body { overflow: visible; padding-right: 0; margin-right: 0; }
+  .customize-browse { flex-shrink: 0; }
+  .custom-picker-list { max-height: clamp(96px, 18vh, 190px); overflow-y: auto; }
+
+  /* Day section fills the remaining height; the 12 visible rows share it equally
+     so the grid always fits without scrolling. */
+  .customize-day { flex: 1; min-height: 0; }
+  .customize-grid {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(12, minmax(0, 1fr));
+    align-content: stretch;
+    row-gap: 4px;
   }
-  .custom-row-label { font-size: 16px; }
-  .custom-slot { height: 28px; }
+  .custom-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 0;
+    padding: 2px;
+    align-items: stretch;
+  }
+  .custom-row-label { font-size: 15px; align-self: center; }
+  .custom-row-slots { align-items: stretch; }
+  .custom-slot { height: 100%; min-height: 18px; }
+
+  /* Paginate: show one half-day at a time (AM 00–11 / PM 12–23), no scroll. */
+  body[data-cust-page="am"] .custom-row[data-col="pm"],
+  body[data-cust-page="pm"] .custom-row[data-col="am"] { display: none; }
+  .customize-grid.is-switching-next { animation: cust-page-next 240ms var(--ease); }
+  .customize-grid.is-switching-prev { animation: cust-page-prev 240ms var(--ease); }
+
+  /* AM/PM segmented pager. */
+  .customize-day-pager {
+    display: inline-flex;
+    align-self: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .day-pager-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--fg-dim);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 20px;
+    min-height: 32px;
+    border-radius: 999px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: background-color 200ms var(--ease), color 200ms var(--ease);
+  }
+  .day-pager-btn[aria-selected="true"] {
+    background: var(--yellow);
+    color: var(--bg);
+  }
   .customize-foot { padding-top: 10px; }
 }
 
 /* ---- Portrait phones: anchor the composition with a more confident center
    readout so the ring doesn't read as a small square floating in dead space. ---- */
 @media (max-width: 600px) and (orientation: portrait) {
+  /* Pin the controls (and the playback-status banner that rides just above them)
+     to the viewport bottom like desktop, instead of the width-capped stage's
+     bottom where they float over the ring. */
+  .controls,
+  .playback-status { position: fixed; }
+  /* Keep the digital clock clear of the dial's "12": the dial fits 100vmin, so on
+     portrait its top label sits ~45vmin above center. */
+  .clock-widget-time { top: 50%; transform: translate(-50%, calc(-50% - 17vmin)); }
+  .clock-widget-location { top: 50%; transform: translate(-50%, calc(-50% - 22vmin)); }
   .readout-time {
     font-size: clamp(2.4rem, 12vw, 3.8rem);
   }
