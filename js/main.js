@@ -850,6 +850,7 @@ function toggleTimeFormat() {
   sliderSetLabelMode(timeFormatMode);
   updateFormatToggleButton();
   updateDayPagerLabels();
+  updateGridHourLabels();
   updateReadout(getClockReference().minuteFloor);
   announce(`Time format set to ${timeFormatMode === TIME_FORMAT_24H ? "24-hour" : "AM/PM"}.`);
 
@@ -1352,8 +1353,68 @@ function initCustomizerUi() {
 
   backdrop?.addEventListener("click", () => closeCustomizerModal());
 
+  // Header action buttons: inject visible labels and wire the mobile two-tap
+  // reveal (first tap shows the label + arms; second tap runs the action).
+  const headWrap = modal.querySelector(".customize-head-buttons");
+  if (headWrap) {
+    const HEAD_LABELS = {
+      "custom-randomize": "Random",
+      "custom-delete-paint": "Erase",
+      "custom-reset": "Reset",
+      "custom-clear-brush": "Clear",
+      "customize-done": "Done",
+      "customize-close": "Close",
+    };
+    headWrap.querySelectorAll(".ctrl-icon").forEach((btn) => {
+      if (HEAD_LABELS[btn.id] && !btn.querySelector(".head-btn-label")) {
+        const span = document.createElement("span");
+        span.className = "head-btn-label";
+        span.textContent = HEAD_LABELS[btn.id];
+        span.setAttribute("aria-hidden", "true");
+        btn.appendChild(span);
+      }
+    });
+    // Capture phase so we can swallow the first tap before the action listener.
+    headWrap.addEventListener("click", onHeadButtonsClickCapture, true);
+  }
+  // A tap anywhere else in the modal disarms the open button.
+  modal.addEventListener("pointerdown", (e) => {
+    if (e.target instanceof Element && !e.target.closest(".customize-head-buttons")) {
+      disarmHeadButtons();
+    }
+  }, true);
+
   customizerReady = true;
   updateCustomizeButtonState();
+}
+
+function useTwoTapToolbar() {
+  return window.matchMedia("(max-width: 600px)").matches;
+}
+
+function armHeadButton(btn) {
+  disarmHeadButtons();
+  btn.classList.add("is-armed");
+}
+
+function disarmHeadButtons() {
+  document
+    .querySelectorAll(".customize-head-buttons .ctrl-icon.is-armed")
+    .forEach((b) => b.classList.remove("is-armed"));
+}
+
+function onHeadButtonsClickCapture(e) {
+  if (!useTwoTapToolbar()) return; // desktop / tablet: act on a single click
+  const btn = e.target instanceof Element ? e.target.closest(".ctrl-icon") : null;
+  if (!btn || btn.disabled) return;
+  if (btn.classList.contains("is-armed")) {
+    btn.classList.remove("is-armed"); // second tap: let the action run
+    return;
+  }
+  // First tap: reveal label + arm, swallow the action.
+  e.preventDefault();
+  e.stopPropagation();
+  armHeadButton(btn);
 }
 
 function openCustomizerModal() {
@@ -1380,6 +1441,7 @@ function openCustomizerModal() {
   modal.hidden = false;
   modal.dataset.state = "opening";
   document.body.classList.add("customize-open");
+  disarmHeadButtons();
   syncSliderInteractivity();
 
   pickerState.search = "";
@@ -1420,6 +1482,7 @@ function closeCustomizerModal() {
   }, 240);
 
   document.body.classList.remove("customize-open");
+  disarmHeadButtons();
   syncSliderInteractivity();
 }
 
@@ -1460,7 +1523,7 @@ function buildCustomizerGrid(gridRoot) {
     hourLabel.type = "button";
     hourLabel.className = "custom-row-label";
     if (hour % 6 === 0) hourLabel.classList.add("is-cardinal");
-    hourLabel.textContent = String(hour).padStart(2, "0");
+    hourLabel.textContent = formatHourLabel(hour);
     hourLabel.setAttribute("aria-label", `Fill hour ${String(hour).padStart(2, "0")} with current brush`);
     hourLabel.addEventListener("click", () => onHourLabelClick(hour));
 
@@ -1600,6 +1663,25 @@ function updateDayPagerLabels() {
     pmBtn.textContent = is24h ? "12–23" : "PM";
     pmBtn.setAttribute("aria-label", "Show hours 12 to 23");
   }
+}
+
+// Row hour label honoring the time-format setting: 24h → "00".."23",
+// 12-hour → "12A","1A"…"11A","12P"…"11P" (matching the ring's labels).
+function formatHourLabel(hour) {
+  if (timeFormatMode === TIME_FORMAT_AMPM) {
+    const h12 = hour % 12 || 12;
+    return `${h12}${hour < 12 ? "A" : "P"}`;
+  }
+  return String(hour).padStart(2, "0");
+}
+
+function updateGridHourLabels() {
+  document.querySelectorAll(".custom-row").forEach((row) => {
+    const hour = parseInt(row.dataset.hour || "", 10);
+    if (!Number.isInteger(hour)) return;
+    const label = row.querySelector(".custom-row-label");
+    if (label) label.textContent = formatHourLabel(hour);
+  });
 }
 
 function onGridDoubleClick(e) {

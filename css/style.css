@@ -959,6 +959,8 @@ body.delete-paint-mode .custom-slot:focus-visible {
 }
 /* AM/PM day pager (phones only — desktop keeps the two-column grid). */
 .customize-day-pager { display: none; }
+/* Header-button labels show only in the mobile two-tap toolbar. */
+.head-btn-label { display: none; }
 @keyframes cust-page-next { from { opacity: 0; transform: translateX(7%); } to { opacity: 1; transform: none; } }
 @keyframes cust-page-prev { from { opacity: 0; transform: translateX(-7%); } to { opacity: 1; transform: none; } }
 .browse-top-row {
@@ -1551,7 +1553,9 @@ body.delete-paint-mode .custom-slot:focus-visible {
     align-items: center;
     gap: 6px;
   }
-  .ctrl-icon { width: 32px; height: 32px; min-width: 32px; min-height: 32px; }
+  /* padding:0 must repeat here: the mobile `.ctrl` padding rule above otherwise
+     wins (equal specificity, later) and crushes the icon to a few px wide. */
+  .ctrl-icon { width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; }
   .custom-row[data-col="am"],
   .custom-row[data-col="pm"] { padding-right: 4px; padding-left: 10px; }
   .customize-body {
@@ -1633,7 +1637,7 @@ body.delete-paint-mode .custom-slot:focus-visible {
     row-gap: 4px;
   }
   .custom-row {
-    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-columns: 28px minmax(0, 1fr);
     gap: 8px;
     min-height: 0;
     padding: 2px;
@@ -1682,6 +1686,69 @@ body.delete-paint-mode .custom-slot:focus-visible {
     color: var(--bg);
   }
   .customize-foot { padding-top: 10px; }
+}
+
+/* ---- Customize header: two-tap reveal toolbar (phones) ----
+   Compact icon buttons in a full-width row (the redundant "PLAYLIST" eyebrow is
+   hidden to make room). First tap expands the tapped button to show its label
+   and arms it (JS adds .is-armed); a second tap runs the action. space-between
+   absorbs the expansion by shrinking the gaps, so the row never overflows. */
+@media (max-width: 600px) {
+  .customize-head {
+    grid-template-columns: 1fr;
+    grid-template-areas: "buttons" "brush";
+    gap: 12px 0;
+  }
+  .customize-head > .eyebrow { display: none; }
+  .customize-head .customize-head-buttons {
+    grid-area: buttons;
+    justify-content: space-between;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .customize-head-buttons .ctrl-icon {
+    width: auto;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 7px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    transition:
+      background-color 200ms var(--ease),
+      border-color 200ms var(--ease),
+      color 200ms var(--ease);
+  }
+  .customize-head-buttons .ctrl-icon svg { flex: 0 0 auto; }
+  .head-btn-label {
+    display: inline-block;
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    transition:
+      max-width 220ms var(--ease),
+      opacity 160ms var(--ease),
+      margin-left 220ms var(--ease);
+  }
+  .customize-head-buttons .ctrl-icon.is-armed {
+    background: rgba(252, 212, 46, 0.16);
+    border-color: var(--yellow);
+    color: var(--yellow);
+  }
+  .customize-head-buttons .ctrl-icon.is-armed .head-btn-label {
+    max-width: 6rem;
+    opacity: 1;
+    margin-left: 5px;
+  }
+  .customize-head-buttons .ctrl-primary.is-armed {
+    background: #ffe05a;
+    color: var(--bg);
+    border-color: #ffe05a;
+  }
 }
 
 /* ---- Portrait phones: anchor the composition with a more confident center
