@@ -176,7 +176,17 @@ async function runYoutubeHealthCheck(request, env, nowMs) {
 
 async function loadFanRows(request, env) {
   const url = new URL("/wearehappyfrom.com.json", request.url);
-  const res = await env.ASSETS.fetch(new Request(url.toString(), { method: "GET" }));
+  const requestInit = {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  };
+
+  const res = (env.ASSETS && typeof env.ASSETS.fetch === "function")
+    ? await env.ASSETS.fetch(new Request(url.toString(), requestInit))
+    : await fetch(url.toString(), requestInit);
+
   if (!res.ok) {
     throw new Error(`Failed to load dataset (${res.status}).`);
   }

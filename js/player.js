@@ -3,7 +3,7 @@ import { splitHM } from "./time.js";
 const SEC_PER_DAY = 24 * 60 * 60;
 const SLOT_SECONDS = 4 * 60;
 const SLOT_COUNT = SEC_PER_DAY / SLOT_SECONDS;
-const MIN_QUALITY = "hd720";
+const MIN_QUALITY = "large";
 const AUTO_TRANSITION_POLL_MS = 180;
 const SEEK_TOLERANCE_SEC = 1.25;
 
@@ -12,6 +12,7 @@ let readyResolve;
 const readyPromise = new Promise((r) => { readyResolve = r; });
 
 let onEndedCb = null;
+let onPlayerIssueCb = null;
 let currentHourLoaded = null;
 let hoursRef = null;
 
@@ -45,8 +46,23 @@ export function onHourEnded(cb) {
   onEndedCb = cb;
 }
 
+export function onPlayerIssue(cb) {
+  onPlayerIssueCb = typeof cb === "function" ? cb : null;
+}
+
 export function getCurrentHourLoaded() {
   return currentHourLoaded;
+}
+
+export function getCurrentPlaybackInfo() {
+  if (!activeResolved || typeof activeResolved !== "object") return null;
+  return {
+    kind: activeResolved.kind || null,
+    videoId: activeResolved.videoId || null,
+    hour: Number.isInteger(activeResolved.hour) ? activeResolved.hour : null,
+    slotIndex: Number.isInteger(activeResolved.slotIndex) ? activeResolved.slotIndex : null,
+    videoStartSec: Number.isFinite(activeResolved.videoStartSec) ? activeResolved.videoStartSec : null,
+  };
 }
 
 export function getCurrentMinuteExact() {
@@ -153,6 +169,9 @@ export async function initPlayer({
           void requestSync(fallbackAbs, { forceSeek: true, allowNoop: false });
           if (onEndedCb) onEndedCb(currentHourLoaded);
         }
+      },
+      onError: (e) => {
+        emitPlayerIssue(e && e.data);
       },
     },
   });
@@ -590,4 +609,40 @@ function pickHighestQuality(levels) {
   return levels
     .slice()
     .sort((a, b) => (QUALITY_RANK[a] ?? 999) - (QUALITY_RANK[b] ?? 999))[0] || MIN_QUALITY;
+}
+
+function emitPlayerIssue(rawCode) {
+  if (typeof onPlayerIssueCb !== "function") return;
+
+  const parsedCode = Number(rawCode);
+  const code = Number.isFinite(parsedCode) ? parsedCode : null;
+
+  const payload = {
+    type: "youtube_player_error",
+    code,
+    category: classifyPlayerIssueCode(code),
+    videoId: activeResolved && typeof activeResolved.videoId === "string"
+      ? activeResolved.videoId
+      : null,
+    hour: activeResolved && Number.isInteger(activeResolved.hour)
+      ? activeResolved.hour
+      : null,
+    slotIndex: activeResolved && Number.isInteger(activeResolved.slotIndex)
+      ? activeResolved.slotIndex
+      : null,
+    ts: Date.now(),
+  };
+
+  try {
+    onPlayerIssueCb(payload);
+  } catch (_) {
+    // Never let subscriber errors break player flow.
+  }
+}
+
+function classifyPlayerIssueCode(code) {
+  if (code === 100) return "not_found_or_private";
+  if (code === 101 || code === 150) return "embedding_blocked";
+  if (code === 2 || code === 5) return "player_error";
+  return "unknown";
 }

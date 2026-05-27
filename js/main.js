@@ -26,7 +26,10 @@ import {
   getCurrentMinuteOfDay,
   getCurrentMinuteExact,
   getCurrentSecondOfDay,
+  getCurrentTimeSeconds,
   setCustomPlaylist,
+  onPlayerIssue,
+  getCurrentPlaybackInfo,
 } from "./player.js";
 import {
   initSlider,
@@ -46,6 +49,15 @@ const CLOCK_SINGLE_TAP_DELAY_MS = 240;
 const UI_IDLE_DELAY_MS = 8000;
 const CUSTOM_SYNC_DEBOUNCE_MS = 140;
 const MOBILE_PICKER_BREAKPOINT = 900;
+const DRIFT_CHECK_INTERVAL_MS = 5000;
+const DRIFT_FORCE_THRESHOLD_SEC = 12;
+const FOCUS_RECOVERY_MIN_GAP_MS = 5000;
+const FOCUS_RECOVERY_FORCE_DRIFT_SEC = 8;
+const PLAYBACK_HEALTH_SAMPLE_MS = 2000;
+const PLAYBACK_STALL_PROGRESS_EPS_SEC = 0.35;
+const PLAYBACK_STALL_THRESHOLD_MS = 20000;
+const PLAYBACK_STABLE_AFTER_RECOVERY_MS = 8000;
+const PLAYBACK_RECOVERY_BACKOFF_SECONDS = [5, 15, 30, 60, 120, 300];
 
 const SLOT_MINUTES = 4;
 const SLOT_SECONDS = SLOT_MINUTES * 60;
@@ -136,6 +148,20 @@ let uiIdleTimer = null;
 let lastFanLocationText = null;
 let wasPlayingBeforeHidden = false;
 let lastFocusRecoveryAt = 0;
+let userPausedPlayback = false;
+
+let playbackHealthTimer = null;
+let playbackHealthProbeBusy = false;
+let playbackLastVideoTime = null;
+let playbackLastProgressAt = 0;
+let playbackStableSince = 0;
+let playbackStatusMode = "healthy";
+let playbackRecoveryTimer = null;
+let playbackRecoveryInFlight = false;
+let playbackRecoveryAttempt = 0;
+let playbackIssueCount = 0;
+let playbackNextRetryAt = 0;
+let playbackLastIssueCategory = "";
 
 async function boot() {
   wirePwaInstall();
@@ -196,6 +222,7 @@ async function boot() {
   watchPlayState();
   watchMuteState();
   await syncMuteButton();
+  initPlaybackReliabilityController();
 }
 
 async function triggerYoutubeHealthCheck() {
@@ -221,6 +248,293 @@ async function triggerYoutubeHealthCheck() {
   } catch (_) {
     // Local static hosting or non-worker environments can fail this check.
   }
+}
+
+function initPlaybackReliabilityController() {
+  onPlayerIssue(handlePlayerIssue);
+  document.getElementById("playback-retry-now")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    void triggerManualPlaybackRecovery();
+  });
+
+  resetPlaybackHealthTracking();
+  startPlaybackHealthMonitor();
+  updatePlaybackStatusUi();
+}
+
+function startPlaybackHealthMonitor() {
+  if (playbackHealthTimer !== null) return;
+  playbackHealthTimer = window.setInterval(() => {
+    void runPlaybackHealthProbe();
+  }, PLAYBACK_HEALTH_SAMPLE_MS);
+}
+
+async function runPlaybackHealthProbe() {
+  updatePlaybackStatusUi();
+  if (playbackHealthProbeBusy) return;
+  playbackHealthProbeBusy = true;
+
+  try {
+    if (document.visibilityState !== "visible") {
+      resetPlaybackHealthTracking();
+      return;
+    }
+
+    if (userPausedPlayback) {
+      resetPlaybackHealthTracking();
+      return;
+    }
+
+    const currentVideoTime = getCurrentTimeSeconds();
+    if (!Number.isFinite(currentVideoTime)) {
+      playbackStableSince = 0;
+      return;
+    }
+
+    const now = performance.now();
+    if (!Number.isFinite(playbackLastVideoTime)) {
+      playbackLastVideoTime = currentVideoTime;
+      playbackLastProgressAt = now;
+      return;
+    }
+
+    const delta = currentVideoTime - playbackLastVideoTime;
+    if (delta >= PLAYBACK_STALL_PROGRESS_EPS_SEC) {
+      markPlaybackProgress(now, currentVideoTime);
+      return;
+    }
+
+    playbackStableSince = 0;
+    const stagnantForMs = now - playbackLastProgressAt;
+    if (stagnantForMs < PLAYBACK_STALL_THRESHOLD_MS) return;
+
+    const currentlyPlaying = await isPlaying().catch(() => false);
+    if (!currentlyPlaying && userPausedPlayback) return;
+
+    queuePlaybackRecovery({
+      category: "stall_detected",
+      staleMs: stagnantForMs,
+      currentlyPlaying,
+    });
+  } finally {
+    playbackHealthProbeBusy = false;
+  }
+}
+
+function markPlaybackProgress(now, currentVideoTime) {
+  playbackLastVideoTime = currentVideoTime;
+  playbackLastProgressAt = now;
+
+  if (playbackStatusMode === "healthy") {
+    playbackStableSince = now;
+    return;
+  }
+
+  if (playbackStableSince === 0) playbackStableSince = now;
+  if ((now - playbackStableSince) < PLAYBACK_STABLE_AFTER_RECOVERY_MS) return;
+
+  setPlaybackStatus("healthy");
+}
+
+function queuePlaybackRecovery(issue, { immediate = false } = {}) {
+  if (isPlaybackRecoverySuppressed()) return;
+  if (playbackRecoveryInFlight) return;
+  if (playbackRecoveryTimer !== null && !immediate) return;
+
+  if (issue && typeof issue.category === "string" && issue.category) {
+    playbackLastIssueCategory = issue.category;
+  }
+
+  if (immediate) {
+    clearPlaybackRecoveryTimer();
+  }
+
+  playbackIssueCount += 1;
+  const attemptIndex = Math.min(
+    playbackRecoveryAttempt,
+    PLAYBACK_RECOVERY_BACKOFF_SECONDS.length - 1,
+  );
+  const delaySec = immediate ? 0 : PLAYBACK_RECOVERY_BACKOFF_SECONDS[attemptIndex];
+
+  playbackNextRetryAt = Date.now() + (delaySec * 1000);
+  if (delaySec > 0) {
+    setPlaybackStatus(playbackIssueCount > 1 ? "cooldown" : "suspected_stall");
+    playbackRecoveryTimer = window.setTimeout(() => {
+      playbackRecoveryTimer = null;
+      void executePlaybackRecovery(issue);
+    }, delaySec * 1000);
+    return;
+  }
+
+  void executePlaybackRecovery(issue);
+}
+
+async function executePlaybackRecovery(issue) {
+  if (isPlaybackRecoverySuppressed()) return;
+  if (playbackRecoveryInFlight) return;
+
+  if (issue && typeof issue.category === "string" && issue.category) {
+    playbackLastIssueCategory = issue.category;
+  }
+
+  playbackRecoveryInFlight = true;
+  setPlaybackStatus("recovering");
+
+  try {
+    const minute = currentMinuteOfDay();
+    const secondsInMinute = currentSecondsInMinute();
+
+    await playerSetMinuteOfDay(minute, {
+      secondsInMinute,
+      force: true,
+    });
+
+    const playing = await isPlaying().catch(() => false);
+    if (!playing) {
+      await resumePlayback();
+    }
+
+    userPausedPlayback = false;
+    resetPlaybackHealthTracking();
+    playbackStableSince = 0;
+  } catch (_) {
+    setPlaybackStatus("degraded");
+  } finally {
+    playbackRecoveryInFlight = false;
+    playbackRecoveryAttempt = Math.min(
+      playbackRecoveryAttempt + 1,
+      PLAYBACK_RECOVERY_BACKOFF_SECONDS.length - 1,
+    );
+    updatePlaybackStatusUi();
+  }
+}
+
+async function triggerManualPlaybackRecovery() {
+  clearPlaybackRecoveryTimer();
+  playbackNextRetryAt = 0;
+  userPausedPlayback = false;
+  await executePlaybackRecovery({ category: "manual_retry" });
+}
+
+function clearPlaybackRecoveryTimer() {
+  if (playbackRecoveryTimer === null) return;
+  clearTimeout(playbackRecoveryTimer);
+  playbackRecoveryTimer = null;
+}
+
+function setPlaybackStatus(nextStatus) {
+  if (playbackStatusMode === nextStatus && nextStatus !== "cooldown") {
+    updatePlaybackStatusUi();
+    return;
+  }
+
+  playbackStatusMode = nextStatus;
+  if (nextStatus === "healthy") {
+    clearPlaybackRecoveryTimer();
+    playbackIssueCount = 0;
+    playbackRecoveryAttempt = 0;
+    playbackNextRetryAt = 0;
+    playbackLastIssueCategory = "";
+  }
+
+  updatePlaybackStatusUi();
+}
+
+function resetPlaybackHealthTracking() {
+  const now = performance.now();
+  const currentVideoTime = getCurrentTimeSeconds();
+  playbackLastVideoTime = Number.isFinite(currentVideoTime) ? currentVideoTime : null;
+  playbackLastProgressAt = now;
+  playbackStableSince = now;
+}
+
+function handlePlayerIssue(issue) {
+  const category = issue && typeof issue.category === "string"
+    ? issue.category
+    : "unknown";
+
+  queuePlaybackRecovery({ category }, { immediate: false });
+}
+
+function isPlaybackRecoverySuppressed() {
+  if (document.visibilityState !== "visible") return true;
+  if (userPausedPlayback) return true;
+  return false;
+}
+
+function updatePlaybackStatusUi() {
+  const root = document.getElementById("playback-status");
+  const textEl = document.getElementById("playback-status-text");
+  const retryBtn = document.getElementById("playback-retry-now");
+  const openLink = document.getElementById("playback-open-video");
+  if (!root || !textEl) return;
+
+  const visible = playbackStatusMode !== "healthy";
+  root.hidden = !visible;
+  root.dataset.visible = visible ? "true" : "false";
+  root.dataset.state = playbackStatusMode;
+
+  if (!visible) return;
+
+  textEl.textContent = buildPlaybackStatusMessage();
+  if (retryBtn) {
+    retryBtn.disabled = playbackRecoveryInFlight;
+  }
+
+  if (openLink instanceof HTMLAnchorElement) {
+    const href = buildCurrentVideoWatchUrl();
+    openLink.hidden = !href;
+    if (href) {
+      openLink.href = href;
+    } else {
+      openLink.removeAttribute("href");
+    }
+  }
+}
+
+function buildPlaybackStatusMessage() {
+  const remainingSec = Math.max(0, Math.ceil((playbackNextRetryAt - Date.now()) / 1000));
+
+  if (playbackLastIssueCategory === "embedding_blocked") {
+    if (playbackStatusMode === "recovering") {
+      return "Current video is blocked from embedding. Trying to recover playback.";
+    }
+    return "Current video cannot be embedded on this site. The app will keep retrying.";
+  }
+
+  if (playbackLastIssueCategory === "not_found_or_private") {
+    if (playbackStatusMode === "recovering") {
+      return "Current video appears unavailable/private. Trying to recover playback.";
+    }
+    return "Current video appears unavailable/private. The app will keep retrying.";
+  }
+
+  if (playbackStatusMode === "recovering") {
+    return "Trying to recover playback.";
+  }
+
+  if (playbackStatusMode === "suspected_stall") {
+    if (remainingSec > 0) {
+      return `Playback appears stalled. Retrying in ${remainingSec}s.`;
+    }
+    return "Playback appears stalled. Retrying shortly.";
+  }
+
+  if (playbackStatusMode === "cooldown") {
+    if (remainingSec > 0) {
+      return `Playback may be blocked by YouTube rate-limiting on this network/IP. Retrying in ${remainingSec}s.`;
+    }
+    return "Playback may be blocked by YouTube rate-limiting on this network/IP. Retrying now.";
+  }
+
+  return "Playback may be blocked by YouTube rate-limiting on this network/IP. The app will keep retrying. Try waiting for cooldown (often 1-6 hours), signing in, or switching network/IP.";
+}
+
+function buildCurrentVideoWatchUrl() {
+  const info = getCurrentPlaybackInfo();
+  const videoId = normalizeVideoId(info && info.videoId);
+  if (!videoId) return "";
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
 function extractFlaggedVideoIdSet(payload) {
@@ -340,7 +654,7 @@ function wireControls() {
     resyncNow();
   });
   playPauseBtn?.addEventListener("click", () => {
-    void playPauseToggle();
+    void handleUserPlayPauseToggle();
   });
   muteBtn?.addEventListener("click", () => {
     void toggleMuteState();
@@ -456,7 +770,7 @@ function wireGlobalKeys() {
     const key = e.key.toLowerCase();
     if (e.key === " " || e.code === "Space") {
       e.preventDefault();
-      void playPauseToggle();
+      void handleUserPlayPauseToggle();
     } else if (key === "n") {
       e.preventDefault();
       resyncNow();
@@ -544,6 +858,25 @@ async function toggleMuteState() {
   }
 }
 
+async function handleUserPlayPauseToggle() {
+  try {
+    await playPauseToggle();
+    const playing = await isPlaying();
+    userPausedPlayback = !playing;
+
+    if (playing) {
+      resetPlaybackHealthTracking();
+      if (playbackStatusMode === "healthy") {
+        playbackStableSince = performance.now();
+      }
+    }
+
+    updatePlaybackStatusUi();
+  } catch (_) {
+    // Player might not be ready yet.
+  }
+}
+
 async function syncMuteButton() {
   const muteBtn = document.getElementById("mute-toggle");
   if (!muteBtn) return;
@@ -596,13 +929,23 @@ function startTickers(svg) {
 
   setInterval(() => {
     if (manualOverride) return;
+    if (document.visibilityState !== "visible") return;
+    if (
+      playbackRecoveryInFlight
+      || playbackStatusMode === "suspected_stall"
+      || playbackStatusMode === "cooldown"
+      || playbackStatusMode === "recovering"
+      || playbackStatusMode === "degraded"
+    ) {
+      return;
+    }
 
     const expectedSec = (currentMinuteOfDay() * 60) + currentSecondsInMinute();
     const playerSec = getCurrentSecondOfDay();
     if (!Number.isFinite(playerSec)) return;
 
     const drift = shortestSecondDelta(playerSec, expectedSec);
-    if (Math.abs(drift) <= 4) return;
+    if (Math.abs(drift) <= DRIFT_FORCE_THRESHOLD_SEC) return;
 
     const nextMin = currentMinuteOfDay();
     const nextSecInMinute = currentSecondsInMinute();
@@ -615,7 +958,7 @@ function startTickers(svg) {
     sliderSetMinuteOfDay(nextMin);
     updateReadout(nextMin);
     updateClockWidgetOverlay();
-  }, 1000);
+  }, DRIFT_CHECK_INTERVAL_MS);
 }
 
 function shortestSecondDelta(actual, expected) {
@@ -2275,25 +2618,42 @@ async function rememberPlaybackStateBeforeHide() {
 
 async function recoverPlaybackAfterFocusReturn() {
   const now = performance.now();
-  if (now - lastFocusRecoveryAt < 650) return;
+  if (now - lastFocusRecoveryAt < FOCUS_RECOVERY_MIN_GAP_MS) return;
   lastFocusRecoveryAt = now;
 
   if (!wasPlayingBeforeHidden) return;
+  if (document.visibilityState !== "visible") return;
 
   let minute = currentMinuteOfDay();
   let secondInMinute = currentSecondsInMinute();
 
-  const playerSec = getCurrentSecondOfDay();
-  if (manualOverride && Number.isFinite(playerSec)) {
-    const normalized = normalizeSecondOfDay(playerSec);
+  const currentPlayerSec = getCurrentSecondOfDay();
+  if (manualOverride && Number.isFinite(currentPlayerSec)) {
+    const normalized = normalizeSecondOfDay(currentPlayerSec);
     minute = Math.floor(normalized / 60);
     secondInMinute = normalized % 60;
   }
 
   try {
-    await playerSetMinuteOfDay(minute, { secondsInMinute: secondInMinute, force: true });
+    const expectedSec = (minute * 60) + secondInMinute;
+    const secForDrift = Number.isFinite(currentPlayerSec) ? currentPlayerSec : getCurrentSecondOfDay();
+    const driftAbs = Number.isFinite(secForDrift)
+      ? Math.abs(shortestSecondDelta(secForDrift, expectedSec))
+      : Number.POSITIVE_INFINITY;
+    const playingBeforeRecovery = await isPlaying().catch(() => false);
+    const shouldForceSeek = !playingBeforeRecovery || driftAbs > FOCUS_RECOVERY_FORCE_DRIFT_SEC;
+
+    if (shouldForceSeek) {
+      await playerSetMinuteOfDay(minute, { secondsInMinute: secondInMinute, force: true });
+    }
+
     if (!(await isPlaying())) {
       await resumePlayback();
+    }
+
+    if (await isPlaying()) {
+      userPausedPlayback = false;
+      resetPlaybackHealthTracking();
     }
   } catch (_) {
     // Ignore visibility recovery failures.

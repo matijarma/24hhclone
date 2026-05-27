@@ -94,6 +94,14 @@
         </div>
       </div>
 
+      <div class="playback-status" id="playback-status" hidden data-visible="false" data-state="healthy" aria-live="polite" role="status">
+        <p class="playback-status-text" id="playback-status-text">Playback status</p>
+        <div class="playback-status-actions">
+          <button id="playback-retry-now" class="ctrl ctrl-compact playback-status-btn" type="button" aria-label="Retry playback now">Retry now</button>
+          <a id="playback-open-video" class="ctrl ctrl-compact playback-status-btn" href="#" target="_blank" rel="noopener noreferrer" hidden>Open current video</a>
+        </div>
+      </div>
+
       <p id="announcer" class="sr-only" aria-live="polite"></p>
       <div class="overlay-fan-location" id="overlay-fan-location" data-visible="false" aria-hidden="true"></div>
     </div>
