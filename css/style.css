@@ -455,33 +455,34 @@ body.clock-mode .overlay-fan-location {
 
 /* ---- Controls (bottom strip) ---- */
 .controls {
-  position: absolute;
-  z-index: 5;
-  left: 50%;
-  bottom: calc(clamp(1rem, 4vh, 3rem) + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: center;
-  gap: 0;
-  align-items: center;
-  row-gap: 0;
-  padding: 0.4rem;
-  width: fit-content;
-  max-width: min(98vw, 1240px);
-  background: var(--bg-soft);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 999px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  overscroll-behavior-x: contain;
-  opacity: 0.55;
-  transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
+    position: absolute;
+    z-index: 5;
+    left: 50%;
+    bottom: calc(clamp(1rem, 4vh, 3rem) + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 0.54rem;
+    align-items: center;
+    row-gap: 0;
+    padding: 0.4rem;
+    width: fit-content;
+    max-width: min(98vw, 1240px);
+    background: var(--bg-soft);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overscroll-behavior-x: contain;
+    opacity: 0.55;
+    transition: opacity 0.28s var(--ease), transform 0.28s var(--ease);
 }
+
 .controls .ctrl-group {
   display: flex;
   flex: 0 0 auto;
