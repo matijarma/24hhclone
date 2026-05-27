@@ -110,7 +110,7 @@ export async function initPlayer({
   activeResolved = first;
 
   ytPlayer = new YT.Player("player", {
-    host: "https://www.youtube-nocookie.com",
+    host: "https://www.youtube.com",
     width: "100%",
     height: "100%",
     videoId: first.videoId,

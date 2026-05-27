@@ -4,7 +4,8 @@ An unofficial recreation of **24hoursofhappy.com** that syncs **Pharrell William
 
 ## Live URL
 
-https://24hh.matijar.info
+https://24hourshappy.online
+
 
 ## Highlights
 
