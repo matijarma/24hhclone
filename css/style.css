@@ -652,9 +652,10 @@ body.ui-idle .stage:hover .slider .label-bottom,
 body.ui-idle .stage:focus-within .slider .label-bottom {
   opacity: 0;
 }
-body.ui-idle .stage:hover .clock-widget-hint {
-  opacity: 1;
-}
+/* No :hover reappear for the clock-widget hint. In clock mode the stage is
+   fullscreen, so a stationary cursor (or a sticky touch :hover after a tap)
+   would keep the hint from ever fading on idle. Activity re-shows it anyway
+   because JS removes .ui-idle on pointer/touch/key input. */
 body.ui-idle main:hover + footer,
 body.ui-idle > footer:hover {
   opacity: 1;
